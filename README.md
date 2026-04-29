@@ -1,8 +1,8 @@
-# mps-decompress
+# mops
 
-`mps-decompress` expands compressed JetBrains MPS persistence v9 model XML so the model is easier to inspect with humans or LLMs.
+`mops` is a small helper CLI for inspecting JetBrains MPS artifacts.
 
-It rewrites selected node-graph attributes using the model's own `<registry>` and `<imports>` sections:
+The current command is `mops decompress`, which expands compressed MPS persistence v9 model XML so the model is easier to inspect with humans or LLMs. It rewrites selected node-graph attributes using the model's own `<registry>` and `<imports>` sections:
 
 - `node@concept` becomes the full concept name.
 - `node@role`, `property@role`, and `ref@role` become unqualified role names.
@@ -20,18 +20,26 @@ There is no in-place mode. Output always goes to stdout.
 ## Usage
 
 ```sh
-mps-decompress < input.mps > output.mps
-mps-decompress input.mps > output.mps
-mps-decompress --version
+mops decompress < input.mps > output.mps
+mops decompress input.mps > output.mps
+mops --version
 ```
 
 Diagnostics are written to stderr. Unsupported persistence versions, missing registries, malformed XML, and duplicate registry/import indices fail with a non-zero exit code.
+
+## Commands
+
+```sh
+mops decompress [input.mps]
+```
+
+Reads from stdin when `input.mps` is omitted. Writes transformed XML to stdout.
 
 ## Build And Test
 
 ```sh
 go test ./...
-go build ./cmd/mps-decompress
+go build ./cmd/mops
 ```
 
 ## Attribution
