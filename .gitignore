@@ -1,6 +1,7 @@
 /mps-decompress
 /mops
 /dist/
+/.cache/
 /coverage.out
 *.test
 .DS_Store
