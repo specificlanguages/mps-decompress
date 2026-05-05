@@ -10,6 +10,7 @@ mops expand input.mps > output.mps
 mops generate-ids model.mps 10
 mops generate-ids --long model-folder 10
 mops list-models
+mops validate [--json] model.mps [other.mps...]
 mops --version
 ```
 
@@ -52,6 +53,14 @@ Scans `root`, or the current directory when omitted, for standalone `.mps` model
 File-per-root models are reported as the parent folder of the `.model` file with a trailing `/`. Paths are normalized to `/` separators.
 
 When possible, `list-models` uses `git ls-files -co --exclude-standard` so Git-ignored files are skipped. If Git is unavailable or the root is not in a Git worktree, it falls back to a filesystem walk and only skips `.git`.
+
+```sh
+mops validate [--json] <target> [target...]
+```
+
+Validates explicit standalone MPS model XML targets. Well-formed persistence version `9` targets pass. Malformed XML and unsupported persistence versions are reported as validation findings, and every requested target is checked before the final exit status is decided.
+
+Human output is terse. With `--json`, `validate` prints a stable validation report with status and findings for LLM consumption.
 
 ## Build And Test
 
