@@ -2,6 +2,7 @@
 
 ## 0.3.0 (Unreleased)
 
+- Reshaped the repository into a Gradle-rooted monorepo with `cli` and `ide` subprojects.
 - Renamed `decompress` command to `expand`.
 
 ## 0.2.0 - 2026-04-29

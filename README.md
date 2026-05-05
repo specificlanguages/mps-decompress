@@ -67,9 +67,16 @@ Human output is terse. With `--json`, `validate` prints a stable validation repo
 ## Build And Test
 
 ```sh
+./gradlew check
+
+cd cli
 go test ./...
 go build ./cmd/mops
 ```
+
+The repository is a Gradle-rooted monorepo. `cli/` contains the Go module named `mops`; direct Go workflows run from
+that directory. `ide/` contains the MPS project home for the future Live IDE bridge artifact. Root Gradle tasks
+orchestrate subproject checks without replacing Go dependency management or build semantics.
 
 ## Attribution
 
