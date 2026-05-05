@@ -1,4 +1,4 @@
-package decompress
+package expand
 
 import (
 	"bytes"
@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"mps-decompress/internal/nodeids"
+	"mops/internal/nodeids"
 )
 
 type registryMaps struct {

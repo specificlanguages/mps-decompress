@@ -8,9 +8,9 @@ import (
 	"os"
 	"strconv"
 
-	"mps-decompress/internal/decompress"
-	"mps-decompress/internal/generateids"
-	"mps-decompress/internal/listmodels"
+	"mops/internal/expand"
+	"mops/internal/generateids"
+	"mops/internal/listmodels"
 )
 
 const version = "0.2.0"
@@ -55,8 +55,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	commandArgs := flags.Args()[1:]
 
 	switch command {
-	case "decompress":
-		return runDecompress(commandArgs, stdin, stdout, stderr)
+	case "expand":
+		return runExpand(commandArgs, stdin, stdout, stderr)
 	case "list-models":
 		return runListModels(commandArgs, stdout, stderr)
 	case "generate-ids":
@@ -68,10 +68,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 }
 
-func runDecompress(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+func runExpand(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var showHelp bool
 
-	flags := flag.NewFlagSet("mops decompress", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mops expand", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	flags.BoolVar(&showHelp, "h", false, "print help and exit")
 	flags.BoolVar(&showHelp, "help", false, "print help and exit")
@@ -82,7 +82,7 @@ func runDecompress(args []string, stdin io.Reader, stdout, stderr io.Writer) int
 	}
 
 	if showHelp {
-		printDecompressUsage(stdout)
+		printExpandUsage(stdout)
 		return 0
 	}
 
@@ -108,7 +108,7 @@ func runDecompress(args []string, stdin io.Reader, stdout, stderr io.Writer) int
 		input = file
 	}
 
-	if err := decompress.Transform(input, stdout); err != nil {
+	if err := expand.Transform(input, stdout); err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
@@ -236,10 +236,11 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "Run \"mops <command> --help\" for command-specific help.")
 }
 
-func printDecompressUsage(w io.Writer) {
-	fmt.Fprintln(w, "Usage: mops decompress [input.mps]")
+func printExpandUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage: mops expand [input.mps]")
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Reads from stdin when input.mps is omitted. Writes transformed XML to stdout.")
+	fmt.Fprintln(w, "Expand short indices in MPS model files (.mps, .mpsr, .model files) to full names or identifiers for inspection")
+	fmt.Fprintln(w, "Reads from stdin when input.mps is omitted. Writes expanded XML to stdout.")
 }
 
 func printGenerateIDsUsage(w io.Writer) {

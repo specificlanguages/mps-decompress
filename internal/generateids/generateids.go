@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"mps-decompress/internal/nodeids"
+	"mops/internal/nodeids"
 )
 
 type RandInt64 func() (int64, error)

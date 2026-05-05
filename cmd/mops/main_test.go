@@ -56,15 +56,15 @@ func TestRunRejectsUnknownCommand(t *testing.T) {
 	}
 }
 
-func TestRunPrintsDecompressHelp(t *testing.T) {
+func TestRunPrintsExpandHelp(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
-	exit := run([]string{"decompress", "--help"}, strings.NewReader(""), &stdout, &stderr)
+	exit := run([]string{"expand", "--help"}, strings.NewReader(""), &stdout, &stderr)
 
 	if exit != 0 {
 		t.Fatalf("exit = %d, want 0", exit)
 	}
-	assertContains(t, stdout.String(), "Usage: mops decompress [input.mps]")
+	assertContains(t, stdout.String(), "Usage: mops expand [input.mps]")
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
 	}
@@ -98,7 +98,7 @@ func TestRunPrintsGenerateIDsHelp(t *testing.T) {
 	}
 }
 
-func TestRunDecompressesFromStdin(t *testing.T) {
+func TestRunExpandsFromStdin(t *testing.T) {
 	input := `<?xml version="1.0" encoding="UTF-8"?>
 <model ref="r:sample">
   <persistence version="9" />
@@ -117,7 +117,7 @@ func TestRunDecompressesFromStdin(t *testing.T) {
 </model>`
 	var stdout, stderr bytes.Buffer
 
-	exit := run([]string{"decompress"}, strings.NewReader(input), &stdout, &stderr)
+	exit := run([]string{"expand"}, strings.NewReader(input), &stdout, &stderr)
 
 	if exit != 0 {
 		t.Fatalf("exit = %d, want 0; stderr = %q", exit, stderr.String())
@@ -157,7 +157,7 @@ func TestRunGenerateIDsPrintsShortIDs(t *testing.T) {
 	}
 }
 
-func TestRunGenerateIDsPrintsDecompressedIDs(t *testing.T) {
+func TestRunGenerateIDsPrintsExpandedIDs(t *testing.T) {
 	root := t.TempDir()
 	modelPath := filepath.Join(root, "model.mps")
 	if err := os.WriteFile(modelPath, []byte(`<model />`), 0o644); err != nil {

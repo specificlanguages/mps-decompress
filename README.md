@@ -1,12 +1,12 @@
 # mops
 
-`mops` is a small helper CLI for inspecting JetBrains MPS artifacts.
+`mops` is a small helper CLI for helping LLMs work with JetBrains MPS models.
 
 ## Usage
 
 ```sh
-mops decompress < input.mps > output.mps
-mops decompress input.mps > output.mps
+mops expand < input.mps > output.mps
+mops expand input.mps > output.mps
 mops generate-ids model.mps 10
 mops generate-ids --long model-folder 10
 mops list-models
@@ -18,10 +18,13 @@ Diagnostics are written to stderr. Unsupported persistence versions, missing reg
 ## Commands
 
 ```sh
-mops decompress [input.mps]
+mops expand [input.mps]
 ```
 
-Expands compressed MPS persistence v9 model XML so the model is easier to inspect with humans or LLMs. It rewrites selected node-graph attributes using the model's own `<registry>` and `<imports>` sections:
+Expands short indices in the MPS model XML to human-readable identifiers or long IDs, so the model is easier to inspect
+with humans or LLMs.
+
+It rewrites selected node-graph attributes using the model's own `<registry>` and `<imports>` sections:
 
 - `node@concept` becomes the full concept name.
 - `node@role`, `property@role`, and `ref@role` become unqualified role names.
