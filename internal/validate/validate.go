@@ -8,6 +8,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"mops/internal/nodeids"
 )
 
 type Report struct {
@@ -71,38 +74,120 @@ func validateTarget(path string) TargetReport {
 		return target
 	}
 
-	var model struct {
-		Persistence struct {
-			Version string `xml:"version,attr"`
-		} `xml:"persistence"`
-	}
+	persistenceVersion := ""
+	seenNodeIDs := map[string]struct{}{}
 	decoder := xml.NewDecoder(bytes.NewReader(data))
-	if err := decoder.Decode(&model); err != nil {
-		line, column := decoder.InputPos()
-		target.Findings = append(target.Findings, target.malformedXMLFinding(err, &Location{Line: line, Column: column}))
-		return target
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		line, column := decoder.InputPos()
-		if err == nil {
-			err = fmt.Errorf("trailing content after document element")
+	depth := 0
+	rootClosed := false
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			line, column := decoder.InputPos()
+			target.Findings = append(target.Findings, target.malformedXMLFinding(err, &Location{Line: line, Column: column}))
+			return target
 		}
-		target.Findings = append(target.Findings, target.malformedXMLFinding(err, &Location{Line: line, Column: column}))
-		return target
+
+		switch token := token.(type) {
+		case xml.StartElement:
+			if rootClosed {
+				line, column := decoder.InputPos()
+				target.Findings = append(target.Findings, target.malformedXMLFinding(
+					fmt.Errorf("trailing content after document element"),
+					&Location{Line: line, Column: column},
+				))
+				return target
+			}
+			depth++
+			switch token.Name.Local {
+			case "persistence":
+				persistenceVersion = attr(token, "version")
+			case "node":
+				validateNodeID(&target, seenNodeIDs, attr(token, "id"))
+			}
+		case xml.EndElement:
+			if depth > 0 {
+				depth--
+			}
+			if depth == 0 {
+				rootClosed = true
+			}
+		case xml.CharData:
+			if rootClosed && strings.TrimSpace(string(token)) != "" {
+				line, column := decoder.InputPos()
+				target.Findings = append(target.Findings, target.malformedXMLFinding(
+					fmt.Errorf("trailing content after document element"),
+					&Location{Line: line, Column: column},
+				))
+				return target
+			}
+		}
 	}
 
-	if model.Persistence.Version != "9" {
+	if persistenceVersion != "9" {
 		target.Findings = append(target.Findings, target.finding(
 			"error",
 			"unsupported-persistence-version",
-			fmt.Sprintf("unsupported persistence version %q", model.Persistence.Version),
+			fmt.Sprintf("unsupported persistence version %q", persistenceVersion),
 			nil,
 			"persistence",
 		))
 	}
 
 	return target
+}
+
+func validateNodeID(target *TargetReport, seenNodeIDs map[string]struct{}, id string) {
+	if id == "^" {
+		target.Findings = append(target.Findings, target.finding(
+			"error",
+			"forbidden-dynamic-node-id",
+			"dynamic reference marker ^ is not a valid MPS node ID",
+			nil,
+			"node-id",
+		))
+		return
+	}
+	if !supportedNodeID(id) {
+		target.Findings = append(target.Findings, target.finding(
+			"error",
+			"invalid-node-id",
+			fmt.Sprintf("invalid MPS node ID %q", id),
+			nil,
+			"node-id",
+		))
+		return
+	}
+	if _, exists := seenNodeIDs[id]; exists {
+		target.Findings = append(target.Findings, target.finding(
+			"error",
+			"duplicate-node-id",
+			fmt.Sprintf("duplicate MPS node ID %q", id),
+			nil,
+			"node-id",
+		))
+		return
+	}
+	seenNodeIDs[id] = struct{}{}
+}
+
+func attr(start xml.StartElement, name string) string {
+	for _, attr := range start.Attr {
+		if attr.Name.Local == name {
+			return attr.Value
+		}
+	}
+	return ""
+}
+
+func supportedNodeID(id string) bool {
+	if len(id) > 0 && id[0] == '~' {
+		return true
+	}
+	_, ok := nodeids.DecodeRegular(id)
+	return ok
 }
 
 func (t TargetReport) malformedXMLFinding(err error, location *Location) Finding {
