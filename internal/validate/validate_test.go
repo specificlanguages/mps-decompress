@@ -156,6 +156,15 @@ func TestRunReportsInvalidStandaloneModelRootElement(t *testing.T) {
 	assertFinding(t, report, "error", "invalid-document-root", filepath.ToSlash(modelPath))
 }
 
+func TestRunReportsInvalidRootFileRootElement(t *testing.T) {
+	rootPath := filepath.Join(t.TempDir(), "root.mpsr")
+	writeFile(t, rootPath, `<node concept="1" id="1" />`)
+
+	report := Run([]string{rootPath})
+
+	assertFinding(t, report, "error", "invalid-document-root", filepath.ToSlash(rootPath))
+}
+
 func TestRunReportsNodeOutsideValidRootOrChildPosition(t *testing.T) {
 	modelPath := writeModel(t, `<model ref="r:sample">
   <persistence version="9">
@@ -210,8 +219,14 @@ func TestRunReportsDuplicateNodeIDsAcrossDirectRootFilesInFilePerRootFolder(t *t
 	modelFolder := filepath.Join(root, "models", "sample")
 	secondRoot := filepath.Join(modelFolder, "second.mpsr")
 	writeFile(t, filepath.Join(modelFolder, ".model"), `<model ref="r:sample"><persistence version="9" /></model>`)
-	writeFile(t, filepath.Join(modelFolder, "first.mpsr"), `<node concept="1" id="1" />`)
-	writeFile(t, secondRoot, `<node concept="1" id="1" />`)
+	writeFile(t, filepath.Join(modelFolder, "first.mpsr"), `<model ref="r:sample" content="root">
+  <persistence version="9" />
+  <node concept="1" id="1" />
+</model>`)
+	writeFile(t, secondRoot, `<model ref="r:sample" content="root">
+  <persistence version="9" />
+  <node concept="1" id="1" />
+</model>`)
 
 	report := Run([]string{modelFolder})
 
@@ -227,7 +242,10 @@ func TestRunReportsFileForInvalidRootFileFindingInFilePerRootFolder(t *testing.T
 	modelFolder := filepath.Join(root, "models", "sample")
 	brokenRoot := filepath.Join(modelFolder, "broken.mpsr")
 	writeFile(t, filepath.Join(modelFolder, ".model"), `<model ref="r:sample"><persistence version="9" /></model>`)
-	writeFile(t, brokenRoot, `<node concept="1" id="not-supported" />`)
+	writeFile(t, brokenRoot, `<model ref="r:sample" content="root">
+  <persistence version="9" />
+  <node concept="1" id="not-supported" />
+</model>`)
 
 	report := Run([]string{modelFolder})
 
@@ -241,8 +259,14 @@ func TestRunAcceptsFilePerRootFolderWithDirectRootFiles(t *testing.T) {
 	root := t.TempDir()
 	modelFolder := filepath.Join(root, "models", "sample")
 	writeFile(t, filepath.Join(modelFolder, ".model"), `<model ref="r:sample"><persistence version="9" /></model>`)
-	writeFile(t, filepath.Join(modelFolder, "first.mpsr"), `<node concept="1" id="1" />`)
-	writeFile(t, filepath.Join(modelFolder, "second.mpsr"), `<node concept="1" id="2" />`)
+	writeFile(t, filepath.Join(modelFolder, "first.mpsr"), `<model ref="r:sample" content="root">
+  <persistence version="9" />
+  <node concept="1" id="1" />
+</model>`)
+	writeFile(t, filepath.Join(modelFolder, "second.mpsr"), `<model ref="r:sample" content="root">
+  <persistence version="9" />
+  <node concept="1" id="2" />
+</model>`)
 
 	report := Run([]string{modelFolder})
 
@@ -255,8 +279,14 @@ func TestRunIgnoresNestedRootFilesInFilePerRootFolder(t *testing.T) {
 	root := t.TempDir()
 	modelFolder := filepath.Join(root, "models", "sample")
 	writeFile(t, filepath.Join(modelFolder, ".model"), `<model ref="r:sample"><persistence version="9" /></model>`)
-	writeFile(t, filepath.Join(modelFolder, "root.mpsr"), `<node concept="1" id="1" />`)
-	writeFile(t, filepath.Join(modelFolder, "nested", "ignored.mpsr"), `<node concept="1" id="1" />`)
+	writeFile(t, filepath.Join(modelFolder, "root.mpsr"), `<model ref="r:sample" content="root">
+  <persistence version="9" />
+  <node concept="1" id="1" />
+</model>`)
+	writeFile(t, filepath.Join(modelFolder, "nested", "ignored.mpsr"), `<model ref="r:sample" content="root">
+  <persistence version="9" />
+  <node concept="1" id="1" />
+</model>`)
 
 	report := Run([]string{modelFolder})
 
@@ -267,7 +297,10 @@ func TestRunIgnoresNestedRootFilesInFilePerRootFolder(t *testing.T) {
 
 func TestRunTreatsStandaloneRootFileAsIncompleteValidation(t *testing.T) {
 	rootPath := filepath.Join(t.TempDir(), "root.mpsr")
-	writeFile(t, rootPath, `<node concept="1" id="1" />`)
+	writeFile(t, rootPath, `<model ref="r:sample" content="root">
+  <persistence version="9" />
+  <node concept="1" id="1" />
+</model>`)
 
 	report := Run([]string{rootPath})
 

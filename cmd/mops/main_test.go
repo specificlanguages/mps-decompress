@@ -312,7 +312,10 @@ func TestRunValidateJSONReportsSuccess(t *testing.T) {
 func TestRunValidateStandaloneRootFileExitsZeroForIncompleteValidation(t *testing.T) {
 	root := t.TempDir()
 	rootPath := filepath.Join(root, "sample.mpsr")
-	writeFile(t, rootPath, `<node concept="1" id="1" />`)
+	writeFile(t, rootPath, `<model ref="r:sample" content="root">
+  <persistence version="9" />
+  <node concept="1" id="1" />
+</model>`)
 
 	var stdout, stderr bytes.Buffer
 
@@ -335,7 +338,10 @@ func TestRunValidateHumanOutputReportsRootFileFindingLocation(t *testing.T) {
 	modelFolder := filepath.Join(root, "models", "sample")
 	brokenRoot := filepath.Join(modelFolder, "broken.mpsr")
 	writeFile(t, filepath.Join(modelFolder, ".model"), `<model ref="r:sample"><persistence version="9" /></model>`)
-	writeFile(t, brokenRoot, `<node concept="1" id="not-supported" />`)
+	writeFile(t, brokenRoot, `<model ref="r:sample" content="root">
+  <persistence version="9" />
+  <node concept="1" id="not-supported" />
+</model>`)
 
 	var stdout, stderr bytes.Buffer
 

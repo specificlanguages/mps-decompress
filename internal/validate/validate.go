@@ -223,11 +223,11 @@ func validateContainmentShape(target *TargetReport, start xml.StartElement, elem
 				file,
 			))
 		}
-		if !requireModelRoot && start.Name.Local != "node" {
+		if !requireModelRoot && start.Name.Local != "model" {
 			target.Findings = append(target.Findings, target.findingInFile(
 				"error",
 				"invalid-document-root",
-				fmt.Sprintf("root file document root must be <node>, got <%s>", start.Name.Local),
+				fmt.Sprintf("root file document root must be <model>, got <%s>", start.Name.Local),
 				nil,
 				"persistence-grammar",
 				file,
