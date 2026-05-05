@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -78,13 +79,16 @@ func validateTarget(path string) TargetReport {
 	decoder := xml.NewDecoder(bytes.NewReader(data))
 	if err := decoder.Decode(&model); err != nil {
 		line, column := decoder.InputPos()
-		target.Findings = append(target.Findings, target.finding(
-			"error",
-			"malformed-xml",
-			fmt.Sprintf("malformed XML: %v", err),
-			&Location{Line: line, Column: column},
-			"xml-parser",
-		))
+		target.Findings = append(target.Findings, target.malformedXMLFinding(err, &Location{Line: line, Column: column}))
+		return target
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		line, column := decoder.InputPos()
+		if err == nil {
+			err = fmt.Errorf("trailing content after document element")
+		}
+		target.Findings = append(target.Findings, target.malformedXMLFinding(err, &Location{Line: line, Column: column}))
 		return target
 	}
 
@@ -99,6 +103,16 @@ func validateTarget(path string) TargetReport {
 	}
 
 	return target
+}
+
+func (t TargetReport) malformedXMLFinding(err error, location *Location) Finding {
+	return t.finding(
+		"error",
+		"malformed-xml",
+		fmt.Sprintf("malformed XML: %v", err),
+		location,
+		"xml-parser",
+	)
 }
 
 func (t TargetReport) finding(severity, code, message string, location *Location, source string) Finding {
