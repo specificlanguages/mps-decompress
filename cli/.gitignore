@@ -1,0 +1,5 @@
+mops
+/dist/
+/.cache/
+/cli/coverage.out
+*.test

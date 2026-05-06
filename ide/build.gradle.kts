@@ -16,6 +16,6 @@ tasks.register("checkMpsProjectLayout") {
     }
 }
 
-tasks.named("check") {
+tasks.check {
     dependsOn("checkMpsProjectLayout")
 }

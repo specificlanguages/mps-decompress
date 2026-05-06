@@ -1,13 +1,2 @@
-/mops
-/cli/mops
-/dist/
-/cli/dist/
-/.cache/
-/coverage.out
-/cli/coverage.out
-*.test
-.DS_Store
-.idea/
-.gradle/
-build/
-*/build/
+/.idea/
+/.gradle/

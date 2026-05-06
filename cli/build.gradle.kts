@@ -1,3 +1,7 @@
+plugins {
+    `lifecycle-base`
+}
+
 val goExecutable = providers.gradleProperty("goExecutable").orElse("go")
 
 tasks.register<Exec>("goTest") {
@@ -16,10 +20,20 @@ tasks.register<Exec>("goBuild") {
     args("build", "./cmd/mops")
 }
 
-tasks.named("check") {
+tasks.register<Delete>("goClean") {
+    group = "build"
+    description = "Cleans the Go build result."
+    delete("mops")
+}
+
+tasks.check {
     dependsOn("goTest")
 }
 
-tasks.named("assemble") {
+tasks.assemble {
     dependsOn("goBuild")
+}
+
+tasks.clean {
+    dependsOn("goClean")
 }
