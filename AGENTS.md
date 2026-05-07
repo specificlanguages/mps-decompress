@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-Issues are tracked in GitHub Issues for `specificlanguages/mops`. See `docs/agents/issue-tracker.md`.
+Issues are tracked as local Markdown files under `.scratch/` for `specificlanguages/mops`. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
