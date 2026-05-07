@@ -1,12 +1,18 @@
 plugins {
     base
+    kotlin("jvm") version "2.2.21" apply false
 }
 
 group = "com.specificlanguages.mops"
-version = "0.2.0"
+version = "0.3.0-SNAPSHOT"
 
 subprojects {
-    apply(plugin = "base")
+    group = rootProject.group
+    version = rootProject.version
+
+    repositories {
+        mavenCentral()
+    }
 }
 
 tasks.named("check") {

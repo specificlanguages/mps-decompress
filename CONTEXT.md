@@ -78,7 +78,8 @@ _Avoid_: XML schema
 Checking whether edited **MPS model XML** still represents a structurally and/or semantically usable **MPS model**.
 
 **Validation run**:
-An invocation of `mops validate` over one or more **Validation targets**.
+A validation invocation over one or more **Validation targets**. The old `mops validate` command belonged to the removed
+Go/offline prototype.
 
 **Structural validation**:
 Local checks over **MPS model XML** persistence structure, IDs, registries, imports, and file-internal consistency.
@@ -115,20 +116,12 @@ MPS-backed checking that loads an MPS project and its models and reports semanti
 violations, and user-defined checker findings.
 _Avoid_: structural validation, XML validation
 
-**Live MPS instance**:
-An open MPS or MPS-based IDE process that has the target project loaded and can perform MPS operations on request.
-_Avoid_: offline MPS, embedded MPS
-
-**IDE-backed operation**:
-A `mops` operation performed by asking a **Live MPS instance** to act on the currently open MPS project.
-_Avoid_: local structural operation
-
-**Live IDE bridge**:
-The `mops ide` command family that connects `mops` to a **Live MPS instance** for **IDE-backed operations**.
-_Avoid_: model resave command as the whole capability
+**MPS daemon**:
+A per-project Kotlin/JVM process started and reused by `mops` to run MPS-backed operations through MPS APIs.
+_Avoid_: Live IDE bridge, visible IDE bridge
 
 **Model resave**:
-An **IDE-backed operation** that saves one loaded **MPS model** back to its **Persisted model** representation.
+A daemon-backed operation that saves one loaded **MPS model** back to its **Persisted model** representation.
 _Avoid_: format, force-save-all when only one model is targeted
 
 **Model resave target**:
@@ -137,8 +130,8 @@ _Avoid_: raw model reference as the primary user input
 
 ## Relationships
 
-- **Model validation** is exposed through `mops validate` and may combine **Structural validation** and **Semantic model
-  checking**.
+- **Model validation** may combine **Structural validation** and **Semantic model checking**. The old offline
+  `mops validate` command is not part of the active daemon prototype.
 - A **Validation run** checks all requested **Validation targets** and reports all findings before deciding the overall
   status.
 - **MPS node IDs** must be unique across the entire MPS model, including all root files in file-per-root persistence.
@@ -169,56 +162,43 @@ _Avoid_: raw model reference as the primary user input
 - A **Finding code** is the stable API for agents; message text is for humans.
 - **Finding severity** determines whether a **Validation finding** blocks confidence in the edited model.
 - **Semantic model checking** is a later validation layer because it depends on MPS and project state.
-- **IDE-backed operations** require a **Live MPS instance** and are grouped separately from local commands that inspect
-  or transform **Persisted model** data directly.
-- The **Live IDE bridge** is a general capability for **IDE-backed operations**, not only the first **Model resave**
-  command.
-- The first **Live IDE bridge** route does not include protocol version negotiation; compatibility policy is deferred
-  until there is more than one operation or version to compare.
-- **IDE-backed operations** contact the **Live MPS instance** through a localhost HTTP endpoint with a fixed host and
-  scheme; callers may choose the IDE port but not an arbitrary URL.
-- The IDE port is configured on the `mops ide` command group, not on each individual **IDE-backed operation**.
-- The **Live IDE bridge** contacts exactly one selected IDE port per invocation and does not scan or fall back across
-  ports.
-- **IDE-backed operations** rely on localhost-only access and do not require authentication in the first slice.
-- The first **Model resave** endpoint is command-shaped and mirrors the CLI operation name.
+- The **MPS daemon** replaces the old Live IDE bridge direction as the active MPS-backed prototype path.
+- MPS-backed operations are grouped under domain commands such as `mops model resave`, not under an `ide` command group.
+- The **MPS daemon** is a separate per-project JVM process, not code embedded in the CLI process.
+- The CLI starts or reuses the **MPS daemon** for daemon-backed operations.
+- The **MPS daemon** communicates through local socket IPC and serializes requests in the first prototype.
 - A **Model resave** targets exactly one **MPS model**; broader module-wide or project-wide resaves are separate future
   operations.
 - The first **Model resave** command accepts exactly one **Model resave target** per invocation.
 - A **Model resave target** is a file path, not a raw MPS model reference string.
 - A `.model` file or direct `*.mpsr` root file is not a valid **Model resave target** because neither represents a
   resavable model target by itself.
-- A **Model resave target** is sent to the **Live MPS instance** as an absolute path so the IDE does not depend on the
-  caller's working directory.
-- The **Live MPS instance** resolves the **Model resave target** to a loaded **MPS model** and reports when no such model
-  can be found or loaded.
-- The **Live IDE bridge** does not verify that the IDE's open project matches the caller's working tree in the first
-  slice; target resolution happens against the project that is actually open in the IDE.
-- `modelPath` is the HTTP contract field for the absolute **Model resave target** path.
+- A **Model resave target** is resolved to an absolute path before it is sent to the **MPS daemon**.
+- The **MPS daemon** resolves the **Model resave target** against its loaded project and reports when no such model can
+  be found or loaded.
 - A **Model resave** may update resolve information or normalize persistence, but it is not a pure formatter.
-- A successful **Model resave** means the **Live MPS instance** completed the save operation, even when the persisted
-  bytes did not change.
-- A failed **Model resave** is reported by the **Live MPS instance** as an HTTP error response with a stable
-  machine-readable code and human message.
+- A successful **Model resave** means the **MPS daemon** completed the save operation, even when the persisted bytes did
+  not change.
+- A failed **Model resave** is reported by the **MPS daemon** with a stable machine-readable code and human message.
 - A **Model resave** does not automatically run **Model validation**; callers compose the two operations explicitly when
   they need both.
 
 ## Example Dialogue
 
-> **Dev:** "After an LLM edits **MPS model XML**, should `mops` validate it?"
+> **Dev:** "After an LLM edits **MPS model XML**, should `mops` validate it again in a future command?"
 > **Domain expert:** "Yes, but say which layer: **Structural validation** can run locally, while **Semantic model
 checking** needs MPS to load and check the model. The **Validation report** should be structured enough for an LLM to
 > consume."
 
-> **Dev:** "Should we call the first running-MPS operation a formatter?"
+> **Dev:** "Should we call the first daemon-backed MPS operation a formatter?"
 > **Domain expert:** "No. It is a **Model resave**: MPS saves one loaded **MPS model** back to its **Persisted model**,
 > which can update resolve info and normalize persistence as a consequence."
 
-> **Dev:** "Why is the command under `mops ide` instead of next to `validate`?"
-> **Domain expert:** "`mops ide` makes the **Live MPS instance** dependency visible; this command asks the open IDE to
-> perform an **IDE-backed operation**."
+> **Dev:** "Why is the command `mops model resave` instead of `mops ide resave-model`?"
+> **Domain expert:** "The active prototype path is the **MPS daemon**, not a visible IDE bridge. `model resave` names the
+> domain operation while the CLI handles daemon startup and reuse."
 
-> **Dev:** "Do I pass the MPS model reference to `mops ide resave-model`?"
+> **Dev:** "Do I pass the MPS model reference to `mops model resave`?"
 > **Domain expert:** "No. The **Model resave target** is the path to the **Persisted model** that the agent edited."
 
 ## Flagged Ambiguities
@@ -227,41 +207,32 @@ checking** needs MPS to load and check the model. The **Validation report** shou
   validation** with two layers: **Structural validation** and **Semantic model checking**.
 - "force save all" initially suggested a module-wide or project-wide action; resolved: the first operation is a
   **Model resave** for a single **MPS model**.
-- "MPS-backed" can mean loading MPS locally or communicating with a running IDE; resolved: commands under `mops ide`
-  are **IDE-backed operations** that require a **Live MPS instance**.
-- "`mops ide`" could mean a one-off namespace for `resave-model` or a broader capability; resolved: it is the **Live
-  IDE bridge** for current and future **IDE-backed operations**.
-- "Bridge protocol version" could be part of the first endpoint or deferred; resolved: defer version negotiation for the
-  first **Live IDE bridge** slice.
-- "Open project verification" could be a separate bridge concern or implicit IDE state; resolved: the first slice trusts
-  the **Live MPS instance** to resolve paths against its currently open project.
-- "`<model>`" in `mops ide resave-model <model>` could mean an MPS model reference or a path; resolved: it is a
+- "MPS-backed" can mean loading MPS in-process, talking to a visible IDE, or using a daemon; resolved: the active
+  prototype path is the per-project **MPS daemon**.
+- "Daemon protocol version" could be exhaustive or minimal in the first slice; resolved: v1 compatibility checking is
+  limited to CLI/daemon protocol version compatibility.
+- "Open project verification" could be a separate client concern or daemon state; resolved: the **MPS daemon** owns one
+  loaded project and resolves operation targets against that project.
+- "`<model>`" in `mops model resave <model>` could mean an MPS model reference or a path; resolved: it is a
   **Model resave target** path.
 - "Resave-model inputs" could allow one or many model targets; resolved: the first command accepts exactly one
   **Model resave target**.
-- "IDE endpoint override" could mean an arbitrary URL or just choosing the IDE HTTP port; resolved: `mops ide` keeps the
-  host and scheme fixed and only allows the port to vary.
-- "Port option" could belong to each operation or to the IDE command group; resolved: it belongs to `mops ide` because
-  the port selects the **Live MPS instance**.
-- "IDE port selection" could involve scanning or fallback ports; resolved: the **Live IDE bridge** uses one selected
-  port per invocation.
-- "Implementation planning" could combine repo reshaping and CLI bridge behavior in one PRD; resolved: split them into
-  separate PRD tracks.
-- "Implementation order" could add `mops ide` before or after moving the Go CLI; resolved: reshape the repository first,
-  then implement the **Live IDE bridge** CLI.
-- "Moving the Go CLI under `cli/`" could also rename the Go module; resolved: preserve the Go module name `mops`.
+- "Socket IPC" could mean HTTP or a local socket protocol; resolved: the daemon prototype uses local socket IPC, with
+  loopback TCP acceptable for v1.
+- "Implementation planning" could preserve both Live IDE bridge and daemon paths; resolved: remove the old bridge path
+  and make the daemon the only active prototype route.
+- "Moving the Go CLI under `cli/`" could preserve the old Go command surface; resolved: replace it with a Kotlin CLI.
 - "Post-resave validation" could be automatic or explicit; resolved: **Model resave** does not automatically run
   **Model validation**.
 - "Path target" could mean the path as typed by the caller or a normalized path; resolved: `mops` sends an absolute
-  **Model resave target** path to the **Live MPS instance**.
-- "Target validation" could mean local CLI preflight or IDE-side resolution; resolved: the **Live MPS instance** is
+  **Model resave target** path to the **MPS daemon**.
+- "Target validation" could mean local CLI preflight or daemon-side resolution; resolved: the **MPS daemon** is
   responsible for resolving the target to a loaded **MPS model** and reporting target failures.
 - "`saved`" could mean either "the save operation completed" or "the file bytes changed"; resolved: it means the save
   operation completed.
-- "Failed resave result" could be represented as `saved: false` or as an error response; resolved: failures use HTTP
-  error responses with stable error codes.
-- "Model resave endpoint" could be resource-shaped or command-shaped; resolved: use a command-shaped endpoint that
-  mirrors `mops ide resave-model`.
-- "Model target field" could be generic `path` or explicit `modelPath`; resolved: the HTTP contract uses `modelPath`.
-- "IDE endpoint security" could require authentication or a shared secret; resolved: the first slice relies on
-  localhost-only access without authentication.
+- "Failed resave result" could be represented as `saved: false` or as an error response; resolved: failures use stable
+  error codes.
+- "Model resave route" could be owned by a daemon command group or a domain command group; resolved: use the domain
+  command `mops model resave`.
+- "Daemon endpoint security" could rely only on loopback or require a token; resolved: v1 uses loopback plus a
+  per-daemon token.

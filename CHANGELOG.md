@@ -2,8 +2,9 @@
 
 ## 0.3.0 (Unreleased)
 
-- Reshaped the repository into a Gradle-rooted monorepo with `cli` and `ide` subprojects.
-- Renamed `decompress` command to `expand`.
+- Pivoted the prototype to Kotlin application subprojects for `cli` and `daemon`.
+- Removed the old Go/offline command surface.
+- Removed the old Live IDE bridge subproject and decision records.
 
 ## 0.2.0 - 2026-04-29
 

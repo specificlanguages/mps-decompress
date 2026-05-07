@@ -12,5 +12,5 @@ kotlin {
 }
 
 application {
-    mainClass = "com.specificlanguages.mops.cli.MainKt"
+    mainClass = "com.specificlanguages.mops.daemon.MainKt"
 }
