@@ -3,6 +3,7 @@
 ## 0.3.0 (Unreleased)
 
 - Pivoted the prototype to Kotlin application subprojects for `cli` and `daemon`.
+- Added `mops --mps-home <path> daemon ping` as a single-use CLI-to-daemon loopback socket proof.
 - Removed the old Go/offline command surface.
 - Removed the old Live IDE bridge subproject and decision records.
 
