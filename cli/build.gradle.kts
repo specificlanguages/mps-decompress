@@ -28,7 +28,7 @@ tasks.named<JavaExec>("run") {
     dependsOn(":daemon:installDist")
     environment(
         "MOPS_DAEMON_CLASSPATH",
-        fileTree(rootProject.layout.projectDirectory.dir("daemon/build/install/daemon/lib")) {
+        fileTree(rootProject.layout.projectDirectory.dir("daemon/build/install/mops-daemon/lib")) {
             include("*.jar")
         }.asPath,
     )

@@ -2,17 +2,20 @@ package com.specificlanguages.mops.cli
 
 import com.google.gson.Gson
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 import java.io.PrintWriter
-import java.io.File
 import java.net.InetAddress
 import java.net.Socket
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.MessageDigest
 import java.time.Duration
+import java.util.Properties
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.absolute
+import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.pathString
@@ -176,6 +179,10 @@ data class PingResponse(
     val protocolVersion: Int,
     val projectPath: String,
     val mpsHome: String,
+    val environmentReady: Boolean = false,
+    val logPath: String? = null,
+    val ideaConfigPath: String? = null,
+    val ideaSystemPath: String? = null,
 )
 
 interface DaemonProcessLauncher {
@@ -189,25 +196,36 @@ class ProcessDaemonLauncher(
     override fun ping(projectPath: Path, mpsHome: Path): PingResponse {
         val token = UUID.randomUUID().toString()
         val daemonClasspath = resolveDaemonClasspath()
+        val launch = SingleUseDaemonLaunch.prepare(projectPath, mpsHome, environment)
         val process = ProcessBuilder(
-            javaExecutable().pathString,
-            "-cp",
-            daemonClasspath,
-            "com.specificlanguages.mops.daemon.MainKt",
-            "single-use-ping",
-            "--project-path",
-            projectPath.absolute().normalize().pathString,
-            "--mps-home",
-            mpsHome.absolute().normalize().pathString,
-            "--token",
-            token,
+            listOf(javaExecutable().pathString) +
+                launch.jvmArgs +
+                listOf(
+                    "-cp",
+                    daemonClasspath,
+                    "com.specificlanguages.mops.daemon.MainKt",
+                    "single-use-ping",
+                    "--project-path",
+                    launch.projectPath.pathString,
+                    "--mps-home",
+                    launch.mpsHome.pathString,
+                    "--token",
+                    token,
+                    "--idea-config-dir",
+                    launch.ideaConfigDir.pathString,
+                    "--idea-system-dir",
+                    launch.ideaSystemDir.pathString,
+                    "--log-path",
+                    launch.logPath.pathString,
+                ),
         )
-            .redirectError(ProcessBuilder.Redirect.INHERIT)
+            .directory(launch.workDir.toFile())
+            .redirectError(ProcessBuilder.Redirect.appendTo(launch.logPath.toFile()))
             .start()
 
         try {
             val stdout = BufferedReader(InputStreamReader(process.inputStream))
-            val readyLine = readLineWithProcessCheck(stdout, process)
+            val readyLine = readLineWithProcessCheck(stdout, process, launch.logPath)
             val ready = GsonCodec.fromJson(readyLine, ReadyMessage::class.java)
             if (ready.type != "ready" || ready.protocolVersion != ProtocolVersion) {
                 throw IllegalStateException("daemon did not report a compatible ready message")
@@ -234,7 +252,7 @@ class ProcessDaemonLauncher(
                 throw IllegalStateException("daemon did not exit after serving ping")
             }
             if (process.exitValue() != 0) {
-                throw IllegalStateException("daemon exited with status ${process.exitValue()}")
+                throw daemonStartupException("daemon exited with status ${process.exitValue()}", launch.logPath)
             }
             if (response.status != "ok") {
                 throw IllegalStateException("daemon ping failed with status ${response.status}")
@@ -261,7 +279,12 @@ class ProcessDaemonLauncher(
             .asSequence()
             .mapNotNull { Path.of(it).toAbsolutePath().parent }
             .flatMap { parentsOf(it) }
-            .map { it.resolve("daemon/build/install/daemon/lib") }
+            .flatMap {
+                sequenceOf(
+                    it.resolve("daemon/build/install/mops-daemon/lib"),
+                    it.resolve("daemon/build/install/daemon/lib"),
+                )
+            }
             .firstOrNull { Files.isDirectory(it) }
             ?.let { libDir ->
                 Files.list(libDir).use { entries ->
@@ -286,19 +309,165 @@ class ProcessDaemonLauncher(
     private fun javaExecutable(): Path =
         Path.of(System.getProperty("java.home"), "bin", if (System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java")
 
-    private fun readLineWithProcessCheck(reader: BufferedReader, process: Process): String {
+    private fun readLineWithProcessCheck(reader: BufferedReader, process: Process, logPath: Path): String {
         val deadline = System.nanoTime() + timeout.toNanos()
         while (System.nanoTime() < deadline) {
             if (reader.ready()) {
                 return reader.readLine()
             }
             if (!process.isAlive) {
-                throw IllegalStateException("daemon exited before reporting its socket port")
+                throw daemonStartupException("daemon exited before reporting its socket port", logPath)
             }
             Thread.sleep(25)
         }
-        throw IllegalStateException("timed out waiting for daemon socket port")
+        throw daemonStartupException("timed out waiting for daemon socket port", logPath)
     }
+
+    private fun daemonStartupException(message: String, logPath: Path): IllegalStateException =
+        IllegalStateException("$message. Daemon log: ${logPath.pathString}")
+}
+
+data class SingleUseDaemonLaunch(
+    val projectPath: Path,
+    val mpsHome: Path,
+    val stateDir: Path,
+    val workDir: Path,
+    val ideaConfigDir: Path,
+    val ideaSystemDir: Path,
+    val logPath: Path,
+    val jvmArgs: List<String>,
+) {
+    companion object {
+        fun prepare(projectPath: Path, mpsHome: Path, environment: Map<String, String>): SingleUseDaemonLaunch {
+            val normalizedProject = projectPath.absolute().normalize()
+            val normalizedMpsHome = mpsHome.absolute().normalize()
+            val projectState = daemonBaseDir(environment)
+                .resolve("projects")
+                .resolve(sha256(normalizedProject.pathString))
+            val workDir = projectState.resolve("single-use")
+            val ideaConfigDir = workDir.resolve("idea-config")
+            val ideaSystemDir = workDir.resolve("idea-system")
+            val logDir = projectState.resolve("logs").createDirectories()
+            workDir.createDirectories()
+            ideaConfigDir.createDirectories()
+            ideaSystemDir.createDirectories()
+            val logPath = logDir.resolve("daemon-ping.log")
+
+            return SingleUseDaemonLaunch(
+                projectPath = normalizedProject,
+                mpsHome = normalizedMpsHome,
+                stateDir = projectState,
+                workDir = workDir,
+                ideaConfigDir = ideaConfigDir,
+                ideaSystemDir = ideaSystemDir,
+                logPath = logPath,
+                jvmArgs = MpsJvmArgs.forMpsHome(normalizedMpsHome, ideaConfigDir, ideaSystemDir),
+            )
+        }
+
+        private fun daemonBaseDir(environment: Map<String, String>): Path =
+            environment["MOPS_DAEMON_HOME"]
+                ?.takeIf { it.isNotBlank() }
+                ?.let { Path.of(it).absolute().normalize() }
+                ?: Path.of(System.getProperty("user.home"), ".mops", "daemon").absolute().normalize()
+
+        private fun sha256(value: String): String {
+            val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+            return digest.joinToString("") { "%02x".format(it) }.take(24)
+        }
+    }
+}
+
+object MpsJvmArgs {
+    fun forMpsHome(mpsHome: Path, ideaConfigDir: Path, ideaSystemDir: Path): List<String> {
+        val mpsVersion = mpsVersion(mpsHome)
+        return buildList {
+            add("-Didea.max.intellisense.filesize=100000")
+            add("-Didea.config.path=${ideaConfigDir.pathString}")
+            add("-Didea.system.path=${ideaSystemDir.pathString}")
+            if (mpsVersion != null && mpsVersion >= "2025.2") {
+                add("-Didea.platform.prefix=MPS")
+            }
+            if (mpsVersion != null && mpsVersion >= "2023.3") {
+                add("-Dintellij.platform.load.app.info.from.resources=true")
+            }
+            if (mpsVersion != null && mpsVersion >= "2022.3") {
+                add("-Djna.boot.library.path=${jnaPath(mpsHome).pathString}")
+            }
+            addAll(mpsAddOpens())
+        }
+    }
+
+    fun requiredJavaMajor(mpsHome: Path): Int {
+        val version = mpsVersion(mpsHome)
+        return when {
+            version == null -> Runtime.version().feature()
+            version >= "2025" -> 21
+            version >= "2022" -> 17
+            else -> 11
+        }
+    }
+
+    private fun mpsVersion(mpsHome: Path): String? {
+        val buildProperties = mpsHome.resolve("build.properties")
+        if (!Files.isRegularFile(buildProperties)) {
+            return null
+        }
+        return Files.newInputStream(buildProperties).use { input ->
+            Properties().apply { load(input) }.getProperty("mps.build.number")
+        }
+    }
+
+    private fun jnaPath(mpsHome: Path): Path {
+        val base = mpsHome.resolve("lib/jna")
+        val platformSpecific = base.resolve(System.getProperty("os.arch"))
+        return if (Files.exists(base) && !Files.exists(platformSpecific)) base else platformSpecific
+    }
+
+    private fun mpsAddOpens(): List<String> =
+        listOf(
+            "java.base/java.io",
+            "java.base/java.lang",
+            "java.base/java.lang.reflect",
+            "java.base/java.net",
+            "java.base/java.nio",
+            "java.base/java.nio.charset",
+            "java.base/java.text",
+            "java.base/java.time",
+            "java.base/java.util",
+            "java.base/java.util.concurrent",
+            "java.base/java.util.concurrent.atomic",
+            "java.base/jdk.internal.ref",
+            "java.base/jdk.internal.vm",
+            "java.base/sun.nio.ch",
+            "java.base/sun.nio.fs",
+            "java.base/sun.security.ssl",
+            "java.base/sun.security.util",
+            "java.desktop/java.awt",
+            "java.desktop/java.awt.dnd.peer",
+            "java.desktop/java.awt.event",
+            "java.desktop/java.awt.image",
+            "java.desktop/java.awt.peer",
+            "java.desktop/javax.swing",
+            "java.desktop/javax.swing.plaf.basic",
+            "java.desktop/javax.swing.text.html",
+            "java.desktop/sun.awt.datatransfer",
+            "java.desktop/sun.awt.image",
+            "java.desktop/sun.awt",
+            "java.desktop/sun.font",
+            "java.desktop/sun.java2d",
+            "java.desktop/sun.swing",
+            "jdk.attach/sun.tools.attach",
+            "jdk.compiler/com.sun.tools.javac.api",
+            "jdk.internal.jvmstat/sun.jvmstat.monitor",
+            "jdk.jdi/com.sun.tools.jdi",
+            "java.desktop/sun.lwawt",
+            "java.desktop/sun.lwawt.macosx",
+            "java.desktop/com.apple.laf",
+            "java.desktop/com.apple.eawt",
+            "java.desktop/com.apple.eawt.event",
+            "java.management/sun.management",
+        ).map { "--add-opens=$it=ALL-UNNAMED" }
 }
 
 private data class ReadyMessage(

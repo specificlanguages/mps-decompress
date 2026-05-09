@@ -22,9 +22,11 @@ contains the first runnable CLI-to-daemon ping slice.
 mops --mps-home <path> daemon ping
 ```
 
-Starts a separate single-use daemon JVM, sends one newline-delimited JSON ping request over a loopback socket, prints the
-structured ping response, and lets the daemon exit. `MOPS_MPS_HOME` can be used instead of `--mps-home`. The command
-infers the MPS project by walking upward from the current directory until it finds a `.mps` directory.
+Starts a separate single-use daemon JVM with MPS-style JVM arguments, isolated IDEA config/system directories, and a
+daemon log under the user-level mops daemon directory. It initializes the project runtime envelope, sends one
+newline-delimited JSON ping request over a loopback socket, prints the structured ping response, and lets the daemon
+exit. `MOPS_MPS_HOME` can be used instead of `--mps-home`. The command infers the MPS project by walking upward from the
+current directory until it finds a `.mps` directory.
 
 ```sh
 mops --mps-home <path> model resave <model-target>
