@@ -1,5 +1,11 @@
 package com.specificlanguages.mops.cli
 
+import com.specificlanguages.mops.protocol.DaemonResponse
+import com.specificlanguages.mops.protocol.GsonCodec
+import com.specificlanguages.mops.protocol.PingRequest
+import com.specificlanguages.mops.protocol.PingResponse
+import com.specificlanguages.mops.protocol.ProtocolVersion
+import com.specificlanguages.mops.protocol.ReadyMessage
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
@@ -21,7 +27,7 @@ class ProcessDaemonLauncher(
         return ensureDaemon(projectPath, mpsHome).ping
     }
 
-    override fun resave(projectPath: Path, mpsHome: Path, modelTarget: Path): ModelResaveResponse {
+    override fun resave(projectPath: Path, mpsHome: Path, modelTarget: Path): DaemonResponse {
         val record = ensureDaemon(projectPath, mpsHome).record
         return DaemonClient(timeout).resave(record, modelTarget.absolute().normalize())
     }
@@ -212,15 +218,4 @@ class ProcessDaemonLauncher(
         val ping: PingResponse,
     )
 
-    private data class ReadyMessage(
-        val type: String,
-        val protocolVersion: Int,
-        val port: Int,
-    )
-
-    private data class PingRequest(
-        val type: String,
-        val protocolVersion: Int,
-        val token: String,
-    )
 }

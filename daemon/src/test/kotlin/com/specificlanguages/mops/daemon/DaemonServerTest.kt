@@ -1,6 +1,12 @@
 package com.specificlanguages.mops.daemon
 
 import com.google.gson.Gson
+import com.specificlanguages.mops.protocol.DaemonControlRequest
+import com.specificlanguages.mops.protocol.DaemonControlResponse
+import com.specificlanguages.mops.protocol.DaemonErrorResponse
+import com.specificlanguages.mops.protocol.PingRequest
+import com.specificlanguages.mops.protocol.PingResponse
+import com.specificlanguages.mops.protocol.ReadyMessage
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter

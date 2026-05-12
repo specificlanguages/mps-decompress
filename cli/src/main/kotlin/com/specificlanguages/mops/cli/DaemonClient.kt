@@ -1,5 +1,14 @@
 package com.specificlanguages.mops.cli
 
+import com.specificlanguages.mops.protocol.DaemonControlRequest
+import com.specificlanguages.mops.protocol.DaemonControlResponse
+import com.specificlanguages.mops.protocol.DaemonErrorResponse
+import com.specificlanguages.mops.protocol.DaemonResponse
+import com.specificlanguages.mops.protocol.GsonCodec
+import com.specificlanguages.mops.protocol.ModelResaveRequest
+import com.specificlanguages.mops.protocol.ModelResaveResponse
+import com.specificlanguages.mops.protocol.PingResponse
+import com.specificlanguages.mops.protocol.ProtocolVersion
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter
@@ -34,15 +43,14 @@ class DaemonClient(
             responseType = DaemonControlResponse::class.java,
         )
 
-    fun resave(record: DaemonRecord, modelTarget: Path): ModelResaveResponse =
+    fun resave(record: DaemonRecord, modelTarget: Path): DaemonResponse =
         Socket(InetAddress.getLoopbackAddress(), record.port).use { socket ->
             socket.soTimeout = timeout.toMillis().toInt()
             PrintWriter(socket.getOutputStream(), true).use { writer ->
                 BufferedReader(InputStreamReader(socket.getInputStream())).use { reader ->
                     writer.println(
                         GsonCodec.toJson(
-                            DaemonControlRequest(
-                                type = "model-resave",
+                            ModelResaveRequest(
                                 protocolVersion = ProtocolVersion,
                                 token = record.token,
                                 modelTarget = modelTarget.pathString,
@@ -54,15 +62,7 @@ class DaemonClient(
                     if (status.status == "ok") {
                         GsonCodec.fromJson(responseLine, ModelResaveResponse::class.java)
                     } else {
-                        val error = GsonCodec.fromJson(responseLine, DaemonErrorResponse::class.java)
-                        ModelResaveResponse(
-                            type = error.type,
-                            status = error.status,
-                            protocolVersion = error.protocolVersion,
-                            logPath = error.logPath,
-                            errorCode = error.errorCode,
-                            message = error.message,
-                        )
+                        GsonCodec.fromJson(responseLine, DaemonErrorResponse::class.java)
                     }
                 }
             }

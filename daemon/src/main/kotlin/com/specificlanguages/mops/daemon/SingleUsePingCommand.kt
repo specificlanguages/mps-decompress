@@ -1,5 +1,6 @@
 package com.specificlanguages.mops.daemon
 
+import com.specificlanguages.mops.protocol.GsonCodec
 import java.nio.file.Path
 import picocli.CommandLine.Command
 import picocli.CommandLine.Option

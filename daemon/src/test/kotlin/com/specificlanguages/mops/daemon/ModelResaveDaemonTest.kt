@@ -1,6 +1,8 @@
 package com.specificlanguages.mops.daemon
 
 import com.google.gson.Gson
+import com.specificlanguages.mops.protocol.DaemonErrorResponse
+import com.specificlanguages.mops.protocol.ModelResaveRequest
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals

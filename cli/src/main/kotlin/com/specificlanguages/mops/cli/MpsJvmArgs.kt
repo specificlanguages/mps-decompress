@@ -1,5 +1,6 @@
 package com.specificlanguages.mops.cli
 
+import com.specificlanguages.mops.protocol.MpsHomeProperty
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Properties
@@ -10,7 +11,7 @@ object MpsJvmArgs {
         val mpsVersion = mpsVersion(mpsHome)
         return buildList {
             add("-Didea.max.intellisense.filesize=100000")
-            add("-Dmops.mps.home=${mpsHome.pathString}")
+            add("-D$MpsHomeProperty=${mpsHome.pathString}")
             add("-Didea.config.path=${ideaConfigDir.pathString}")
             add("-Didea.system.path=${ideaSystemDir.pathString}")
             if (mpsVersion != null && mpsVersion >= "2025.2") {

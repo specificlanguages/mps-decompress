@@ -1,5 +1,6 @@
 package com.specificlanguages.mops.cli
 
+import com.specificlanguages.mops.protocol.GsonCodec
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption

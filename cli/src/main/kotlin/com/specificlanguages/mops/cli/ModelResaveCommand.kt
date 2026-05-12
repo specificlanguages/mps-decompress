@@ -1,5 +1,7 @@
 package com.specificlanguages.mops.cli
 
+import com.specificlanguages.mops.protocol.DaemonErrorResponse
+import com.specificlanguages.mops.protocol.ModelResaveResponse
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.absolute
@@ -37,11 +39,13 @@ class ModelResaveCommand : Runnable {
             )
 
         val response = root.launcher.resave(projectPath, Path.of(mpsHome).absolute(), resolvedTarget)
-        if (response.status == "ok") {
-            spec.commandLine().out.println("resaved ${response.modelTarget}")
-        } else {
-            val logSuffix = response.logPath?.let { " Daemon log: $it" } ?: ""
-            throw IllegalStateException("${response.message ?: "model resave failed"}$logSuffix")
+        when (response) {
+            is ModelResaveResponse -> spec.commandLine().out.println("resaved ${response.modelTarget}")
+            is DaemonErrorResponse -> {
+                val logSuffix = response.logPath?.let { " Daemon log: $it" } ?: ""
+                throw IllegalStateException("${response.message}$logSuffix")
+            }
+            else -> throw IllegalStateException("model resave returned unexpected response type ${response.type}")
         }
     }
 }

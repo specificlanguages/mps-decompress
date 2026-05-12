@@ -1,5 +1,7 @@
 package com.specificlanguages.mops.cli
 
+import com.specificlanguages.mops.protocol.ModelResaveResponse
+import com.specificlanguages.mops.protocol.PingResponse
 import java.io.ByteArrayOutputStream
 import java.io.BufferedReader
 import java.io.InputStreamReader

@@ -1,4 +1,4 @@
-package com.specificlanguages.mops.daemon
+package com.specificlanguages.mops.protocol
 
 sealed interface DaemonResponse {
     val type: String
@@ -24,6 +24,7 @@ data class DaemonControlResponse(
     override val type: String,
     override val status: String,
     override val protocolVersion: Int,
+    val message: String? = null,
 ) : DaemonResponse
 
 data class DaemonErrorResponse(
@@ -35,7 +36,7 @@ data class DaemonErrorResponse(
     val logPath: String? = null,
 ) : DaemonResponse
 
-data class ModelResaveSuccessResponse(
+data class ModelResaveResponse(
     override val type: String = "model-resave",
     override val status: String = "ok",
     override val protocolVersion: Int,

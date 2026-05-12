@@ -1,5 +1,6 @@
 package com.specificlanguages.mops.daemon
 
+import com.specificlanguages.mops.protocol.MpsHomeProperty
 import java.nio.file.Path
 
 internal fun resolveMpsHomeFromRuntime(): Path =

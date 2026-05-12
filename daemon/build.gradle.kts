@@ -12,8 +12,8 @@ configurations {
 }
 
 dependencies {
+    implementation(project(":protocol"))
     implementation("info.picocli:picocli:4.7.7")
-    implementation("com.google.code.gson:gson:2.11.0")
     implementation("de.itemis.mps.build-backends:project-loader:5.0.1.180.8e0fd7e")
 
     mpsRuntime(zipTree({ mpsZip.singleFile }).matching {
