@@ -1,0 +1,43 @@
+package com.specificlanguages.mops.daemon
+
+sealed interface DaemonResponse {
+    val type: String
+    val status: String
+    val protocolVersion: Int
+}
+
+data class PingResponse(
+    override val type: String,
+    override val status: String,
+    override val protocolVersion: Int,
+    val projectPath: String,
+    val mpsHome: String,
+    val environmentReady: Boolean = false,
+    val logPath: String? = null,
+    val ideaConfigPath: String? = null,
+    val ideaSystemPath: String? = null,
+    val errorCode: String? = null,
+    val message: String? = null,
+) : DaemonResponse
+
+data class DaemonControlResponse(
+    override val type: String,
+    override val status: String,
+    override val protocolVersion: Int,
+) : DaemonResponse
+
+data class DaemonErrorResponse(
+    override val type: String,
+    override val status: String = "error",
+    override val protocolVersion: Int,
+    val errorCode: String,
+    val message: String,
+    val logPath: String? = null,
+) : DaemonResponse
+
+data class ModelResaveSuccessResponse(
+    override val type: String = "model-resave",
+    override val status: String = "ok",
+    override val protocolVersion: Int,
+    val modelTarget: String,
+) : DaemonResponse

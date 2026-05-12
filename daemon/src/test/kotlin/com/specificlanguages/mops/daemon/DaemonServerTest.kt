@@ -19,7 +19,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.io.TempDir
 
-class SingleUsePingServerTest {
+class DaemonServerTest {
     private val gson = Gson()
 
     @TempDir
@@ -161,7 +161,7 @@ class SingleUsePingServerTest {
         assertTrue(latch.await(5, TimeUnit.SECONDS), "server did not bind a socket")
         assertEquals("ok", exchange(ready.port, PingRequest(type = "ping", protocolVersion = 1, token = "secret")).status)
         assertEquals("ok", exchange(ready.port, PingRequest(type = "ping", protocolVersion = 1, token = "secret")).status)
-        assertEquals("ok", exchangeControl(ready.port, DaemonRequest(type = "stop", protocolVersion = 1, token = "secret")).status)
+        assertEquals("ok", exchangeControl(ready.port, DaemonControlRequest(type = "stop", protocolVersion = 1, token = "secret")).status)
         thread.join(5_000)
 
         assertTrue(!thread.isAlive, "server did not exit after stop")
@@ -173,7 +173,7 @@ class SingleUsePingServerTest {
 
         val response = server.handle("{}")
 
-        val error = response as DaemonControlResponse
+        val error = response as DaemonErrorResponse
         assertEquals("error", error.type)
         assertEquals("error", error.status)
         assertEquals("INVALID_REQUEST", error.errorCode)
@@ -186,33 +186,10 @@ class SingleUsePingServerTest {
 
         val response = server.handle("""{"type":null,"protocolVersion":1,"token":"secret"}""")
 
-        val error = response as DaemonControlResponse
+        val error = response as DaemonErrorResponse
         assertEquals("error", error.type)
         assertEquals("error", error.status)
         assertEquals("INVALID_REQUEST", error.errorCode)
-    }
-
-    @Test
-    fun `persistent server accepts model resave request and returns explicit scaffold error`() {
-        val server = persistentServer()
-
-        val response = server.handle(
-            gson.toJson(
-                DaemonRequest(
-                    type = "model-resave",
-                    protocolVersion = 1,
-                    token = "secret",
-                    modelTarget = "/project/models/main.mps",
-                ),
-            ),
-        )
-
-        val resave = response as ModelResaveResponse
-        assertEquals("model-resave", resave.type)
-        assertEquals("error", resave.status)
-        assertEquals("NOT_IMPLEMENTED", resave.errorCode)
-        assertEquals("/project/models/main.mps", resave.modelTarget)
-        assertEquals("/state/daemon.log", resave.logPath)
     }
 
     @Test
