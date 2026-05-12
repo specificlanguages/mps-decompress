@@ -106,6 +106,37 @@ class SingleUsePingServerTest {
         assertTrue(java.nio.file.Files.readString(logPath).contains("MPS home is not a directory"))
     }
 
+    @Test
+    fun `persistent server accepts multiple pings before graceful stop`() {
+        val latch = CountDownLatch(1)
+        lateinit var ready: ReadyMessage
+        val server = PersistentDaemonServer(
+            environment = MpsEnvironmentState(
+                projectPath = Path.of("/project"),
+                mpsHome = Path.of("/mps"),
+                ideaConfigDir = Path.of("/state/config"),
+                ideaSystemDir = Path.of("/state/system"),
+                logPath = Path.of("/state/daemon.log"),
+            ),
+            expectedToken = "secret",
+        )
+        val thread = Thread {
+            server.serve {
+                ready = it
+                latch.countDown()
+            }
+        }
+        thread.start()
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS), "server did not bind a socket")
+        assertEquals("ok", exchange(ready.port, PingRequest(type = "ping", protocolVersion = 1, token = "secret")).status)
+        assertEquals("ok", exchange(ready.port, PingRequest(type = "ping", protocolVersion = 1, token = "secret")).status)
+        assertEquals("ok", exchange(ready.port, DaemonRequest(type = "stop", protocolVersion = 1, token = "secret")).status)
+        thread.join(5_000)
+
+        assertTrue(!thread.isAlive, "server did not exit after stop")
+    }
+
     private fun exchange(request: PingRequest): PingResponse {
         val latch = CountDownLatch(1)
         lateinit var ready: ReadyMessage
@@ -140,4 +171,14 @@ class SingleUsePingServerTest {
         assertTrue(!thread.isAlive, "server did not exit after one request")
         return response
     }
+
+    private fun exchange(port: Int, request: Any): PingResponse =
+        Socket(InetAddress.getLoopbackAddress(), port).use { socket ->
+            PrintWriter(socket.getOutputStream(), true).use { writer ->
+                BufferedReader(InputStreamReader(socket.getInputStream())).use { reader ->
+                    writer.println(gson.toJson(request))
+                    gson.fromJson(reader.readLine(), PingResponse::class.java)
+                }
+            }
+        }
 }

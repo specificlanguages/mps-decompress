@@ -9,11 +9,11 @@ import java.net.InetAddress
 import java.net.Socket
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.time.Duration
 import java.util.Properties
 import java.util.UUID
-import java.util.concurrent.TimeUnit
 import kotlin.io.path.absolute
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
@@ -91,7 +91,7 @@ class DaemonCommand : Runnable {
     }
 }
 
-@Command(name = "ping", description = ["Start a single-use daemon and exchange a ping request."])
+@Command(name = "ping", description = ["Start or reuse a project daemon and exchange a ping request."])
 class DaemonPingCommand : Runnable {
     @ParentCommand
     lateinit var daemon: DaemonCommand
@@ -119,21 +119,82 @@ class DaemonPingCommand : Runnable {
 
 @Command(name = "status", description = ["Print daemon status."])
 class DaemonStatusCommand : Runnable {
+    @ParentCommand
+    lateinit var daemon: DaemonCommand
+
+    @Spec
+    lateinit var spec: CommandSpec
+
     @Option(names = ["--all"], description = ["Show daemon state for all projects."])
     var all: Boolean = false
 
     override fun run() {
-        println("mops daemon status is not implemented in this skeleton.")
+        val root = daemon.root
+        val records = DaemonRecordStore(root.environment)
+        val selected = if (all) {
+            records.readAll()
+        } else {
+            val projectPath = inferProjectPath(root.workingDirectory)
+                ?: throw CommandLine.ParameterException(
+                    spec.commandLine(),
+                    "cannot infer MPS project: no .mps directory found from ${root.workingDirectory.absolute()} upward",
+                )
+            listOfNotNull(records.read(projectPath))
+        }
+
+        if (selected.isEmpty()) {
+            spec.commandLine().out.println("no mops daemons")
+            return
+        }
+
+        selected.forEach { record ->
+            spec.commandLine().out.println(
+                "running project=${record.projectPath} port=${record.port} pid=${record.pid} mpsHome=${record.mpsHome} log=${record.logPath}",
+            )
+        }
     }
 }
 
 @Command(name = "stop", description = ["Stop a daemon process."])
 class DaemonStopCommand : Runnable {
+    @ParentCommand
+    lateinit var daemon: DaemonCommand
+
+    @Spec
+    lateinit var spec: CommandSpec
+
     @Option(names = ["--all"], description = ["Stop daemons for all projects."])
     var all: Boolean = false
 
     override fun run() {
-        println("mops daemon stop is not implemented in this skeleton.")
+        val root = daemon.root
+        val records = DaemonRecordStore(root.environment)
+        val selected = if (all) {
+            records.readAll()
+        } else {
+            val projectPath = inferProjectPath(root.workingDirectory)
+                ?: throw CommandLine.ParameterException(
+                    spec.commandLine(),
+                    "cannot infer MPS project: no .mps directory found from ${root.workingDirectory.absolute()} upward",
+                )
+            listOfNotNull(records.read(projectPath))
+        }
+
+        if (selected.isEmpty()) {
+            spec.commandLine().out.println("no mops daemons")
+            return
+        }
+
+        selected.forEach { record ->
+            try {
+                DaemonClient().stop(record)
+                records.delete(Path.of(record.projectPath))
+                spec.commandLine().out.println("stopped project=${record.projectPath} pid=${record.pid}")
+            } catch (_: Exception) {
+                records.delete(Path.of(record.projectPath))
+                spec.commandLine().out.println("removed stale daemon record for project=${record.projectPath}")
+            }
+        }
     }
 }
 
@@ -194,9 +255,34 @@ class ProcessDaemonLauncher(
     private val timeout: Duration = Duration.ofSeconds(15),
 ) : DaemonProcessLauncher {
     override fun ping(projectPath: Path, mpsHome: Path): PingResponse {
+        val records = DaemonRecordStore(environment)
+        val normalizedProject = projectPath.absolute().normalize()
+        val normalizedMpsHome = mpsHome.absolute().normalize()
+        val existing = records.read(normalizedProject)
+        if (existing != null) {
+            if (existing.protocolVersion == ProtocolVersion) {
+                val existingResponse = try {
+                    DaemonClient(timeout).ping(existing)
+                } catch (_: Exception) {
+                    records.delete(normalizedProject)
+                    null
+                }
+                if (existingResponse != null) {
+                    if (Path.of(existing.mpsHome).absolute().normalize() != normalizedMpsHome) {
+                        throw IllegalStateException(
+                            "project is already owned by a mops daemon with a different MPS home: ${existing.mpsHome}",
+                        )
+                    }
+                    return existingResponse
+                }
+            } else {
+                records.delete(normalizedProject)
+            }
+        }
+
         val token = UUID.randomUUID().toString()
         val daemonClasspath = resolveDaemonClasspath()
-        val launch = SingleUseDaemonLaunch.prepare(projectPath, mpsHome, environment)
+        val launch = DaemonLaunch.prepare(normalizedProject, normalizedMpsHome, environment)
         val process = ProcessBuilder(
             listOf(javaExecutable().pathString) +
                 launch.jvmArgs +
@@ -204,7 +290,7 @@ class ProcessDaemonLauncher(
                     "-cp",
                     daemonClasspath,
                     "com.specificlanguages.mops.daemon.MainKt",
-                    "single-use-ping",
+                    "serve",
                     "--project-path",
                     launch.projectPath.pathString,
                     "--mps-home",
@@ -217,12 +303,15 @@ class ProcessDaemonLauncher(
                     launch.ideaSystemDir.pathString,
                     "--log-path",
                     launch.logPath.pathString,
+                    "--record-path",
+                    launch.recordPath.pathString,
                 ),
         )
             .directory(launch.workDir.toFile())
             .redirectError(ProcessBuilder.Redirect.appendTo(launch.logPath.toFile()))
             .start()
 
+        var startupSucceeded = false
         try {
             val stdout = BufferedReader(InputStreamReader(process.inputStream))
             val readyLine = readLineWithProcessCheck(stdout, process, launch.logPath)
@@ -248,19 +337,17 @@ class ProcessDaemonLauncher(
                 }
             }
 
-            if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
-                throw IllegalStateException("daemon did not exit after serving ping")
-            }
-            if (process.exitValue() != 0) {
-                throw daemonStartupException("daemon exited with status ${process.exitValue()}", launch.logPath)
-            }
             if (response.status != "ok") {
                 throw IllegalStateException("daemon ping failed with status ${response.status}")
             }
+            startupSucceeded = true
             return response
         } finally {
-            if (process.isAlive) {
+            if (!startupSucceeded && process.isAlive) {
                 process.destroyForcibly()
+            }
+            if (!startupSucceeded && !process.isAlive && process.exitValue() != 0) {
+                throw daemonStartupException("daemon exited with status ${process.exitValue()}", launch.logPath)
             }
         }
     }
@@ -327,7 +414,7 @@ class ProcessDaemonLauncher(
         IllegalStateException("$message. Daemon log: ${logPath.pathString}")
 }
 
-data class SingleUseDaemonLaunch(
+data class DaemonLaunch(
     val projectPath: Path,
     val mpsHome: Path,
     val stateDir: Path,
@@ -335,16 +422,17 @@ data class SingleUseDaemonLaunch(
     val ideaConfigDir: Path,
     val ideaSystemDir: Path,
     val logPath: Path,
+    val recordPath: Path,
     val jvmArgs: List<String>,
 ) {
     companion object {
-        fun prepare(projectPath: Path, mpsHome: Path, environment: Map<String, String>): SingleUseDaemonLaunch {
+        fun prepare(projectPath: Path, mpsHome: Path, environment: Map<String, String>): DaemonLaunch {
             val normalizedProject = projectPath.absolute().normalize()
             val normalizedMpsHome = mpsHome.absolute().normalize()
             val projectState = daemonBaseDir(environment)
                 .resolve("projects")
                 .resolve(sha256(normalizedProject.pathString))
-            val workDir = projectState.resolve("single-use")
+            val workDir = projectState.resolve("daemon")
             val ideaConfigDir = workDir.resolve("idea-config")
             val ideaSystemDir = workDir.resolve("idea-system")
             val logDir = projectState.resolve("logs").createDirectories()
@@ -352,8 +440,9 @@ data class SingleUseDaemonLaunch(
             ideaConfigDir.createDirectories()
             ideaSystemDir.createDirectories()
             val logPath = logDir.resolve("daemon-ping.log")
+            val recordPath = DaemonRecordStore(environment).recordPath(normalizedProject)
 
-            return SingleUseDaemonLaunch(
+            return DaemonLaunch(
                 projectPath = normalizedProject,
                 mpsHome = normalizedMpsHome,
                 stateDir = projectState,
@@ -361,6 +450,7 @@ data class SingleUseDaemonLaunch(
                 ideaConfigDir = ideaConfigDir,
                 ideaSystemDir = ideaSystemDir,
                 logPath = logPath,
+                recordPath = recordPath,
                 jvmArgs = MpsJvmArgs.forMpsHome(normalizedMpsHome, ideaConfigDir, ideaSystemDir),
             )
         }
@@ -377,6 +467,138 @@ data class SingleUseDaemonLaunch(
         }
     }
 }
+
+data class DaemonRecord(
+    val port: Int,
+    val token: String,
+    val pid: Long,
+    val protocolVersion: Int,
+    val daemonVersion: String,
+    val projectPath: String,
+    val mpsHome: String,
+    val logPath: String,
+    val startupTime: String,
+)
+
+class DaemonRecordStore(
+    private val environment: Map<String, String> = System.getenv(),
+) {
+    fun write(record: DaemonRecord) {
+        val path = recordPath(Path.of(record.projectPath))
+        path.parent.createDirectories()
+        val temporary = path.resolveSibling("${path.fileName}.tmp")
+        Files.writeString(temporary, GsonCodec.toJson(record))
+        Files.move(
+            temporary,
+            path,
+            StandardCopyOption.ATOMIC_MOVE,
+            StandardCopyOption.REPLACE_EXISTING,
+        )
+    }
+
+    fun read(projectPath: Path): DaemonRecord? {
+        val path = recordPath(projectPath)
+        if (!Files.isRegularFile(path)) {
+            return null
+        }
+        return GsonCodec.fromJson(Files.readString(path), DaemonRecord::class.java)
+    }
+
+    fun readAll(): List<DaemonRecord> {
+        val projectsDir = daemonBaseDir(environment).resolve("projects")
+        if (!Files.isDirectory(projectsDir)) {
+            return emptyList()
+        }
+        return Files.list(projectsDir).use { projects ->
+            projects
+                .map { it.resolve("daemon.json") }
+                .filter { Files.isRegularFile(it) }
+                .map { GsonCodec.fromJson(Files.readString(it), DaemonRecord::class.java) }
+                .toList()
+        }
+    }
+
+    fun delete(projectPath: Path) {
+        Files.deleteIfExists(recordPath(projectPath))
+    }
+
+    fun recordPath(projectPath: Path): Path =
+        daemonBaseDir(environment)
+            .resolve("projects")
+            .resolve(projectKey(projectPath))
+            .resolve("daemon.json")
+
+    companion object {
+        fun daemonBaseDir(environment: Map<String, String>): Path =
+            environment["MOPS_DAEMON_HOME"]
+                ?.takeIf { it.isNotBlank() }
+                ?.let { Path.of(it).absolute().normalize() }
+                ?: Path.of(System.getProperty("user.home"), ".mops", "daemon").absolute().normalize()
+
+        fun projectKey(projectPath: Path): String =
+            sha256(projectPath.absolute().normalize().pathString)
+
+        private fun sha256(value: String): String {
+            val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+            return digest.joinToString("") { "%02x".format(it) }.take(24)
+        }
+    }
+}
+
+class DaemonClient(
+    private val timeout: Duration = Duration.ofSeconds(5),
+) {
+    fun ping(record: DaemonRecord): PingResponse =
+        exchange(
+            record = record,
+            request = DaemonControlRequest(
+                type = "ping",
+                protocolVersion = ProtocolVersion,
+                token = record.token,
+            ),
+            responseType = PingResponse::class.java,
+        )
+
+    fun stop(record: DaemonRecord): DaemonControlResponse =
+        exchange(
+            record = record,
+            request = DaemonControlRequest(
+                type = "stop",
+                protocolVersion = ProtocolVersion,
+                token = record.token,
+            ),
+            responseType = DaemonControlResponse::class.java,
+        )
+
+    private fun <T : Any> exchange(record: DaemonRecord, request: DaemonControlRequest, responseType: Class<T>): T =
+        Socket(InetAddress.getLoopbackAddress(), record.port).use { socket ->
+            socket.soTimeout = timeout.toMillis().toInt()
+            PrintWriter(socket.getOutputStream(), true).use { writer ->
+                BufferedReader(InputStreamReader(socket.getInputStream())).use { reader ->
+                    writer.println(GsonCodec.toJson(request))
+                    val responseLine = reader.readLine() ?: throw IllegalStateException("daemon closed connection")
+                    val status = GsonCodec.fromJson(responseLine, DaemonControlResponse::class.java)
+                    if (status.status != "ok") {
+                        throw IllegalStateException(status.message ?: "daemon returned ${status.status}")
+                    }
+                    GsonCodec.fromJson(responseLine, responseType)
+                }
+            }
+        }
+}
+
+data class DaemonControlRequest(
+    val type: String,
+    val protocolVersion: Int,
+    val token: String,
+)
+
+data class DaemonControlResponse(
+    val type: String,
+    val status: String,
+    val protocolVersion: Int,
+    val message: String? = null,
+)
 
 object MpsJvmArgs {
     fun forMpsHome(mpsHome: Path, ideaConfigDir: Path, ideaSystemDir: Path): List<String> {
