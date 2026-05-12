@@ -1,0 +1,86 @@
+package com.specificlanguages.mops.cli
+
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.PrintWriter
+import java.net.InetAddress
+import java.net.Socket
+import java.nio.file.Path
+import java.time.Duration
+import kotlin.io.path.pathString
+
+class DaemonClient(
+    private val timeout: Duration = Duration.ofSeconds(5),
+) {
+    fun ping(record: DaemonRecord): PingResponse =
+        exchange(
+            record = record,
+            request = DaemonControlRequest(
+                type = "ping",
+                protocolVersion = ProtocolVersion,
+                token = record.token,
+            ),
+            responseType = PingResponse::class.java,
+        )
+
+    fun stop(record: DaemonRecord): DaemonControlResponse =
+        exchange(
+            record = record,
+            request = DaemonControlRequest(
+                type = "stop",
+                protocolVersion = ProtocolVersion,
+                token = record.token,
+            ),
+            responseType = DaemonControlResponse::class.java,
+        )
+
+    fun resave(record: DaemonRecord, modelTarget: Path): ModelResaveResponse =
+        Socket(InetAddress.getLoopbackAddress(), record.port).use { socket ->
+            socket.soTimeout = timeout.toMillis().toInt()
+            PrintWriter(socket.getOutputStream(), true).use { writer ->
+                BufferedReader(InputStreamReader(socket.getInputStream())).use { reader ->
+                    writer.println(
+                        GsonCodec.toJson(
+                            DaemonControlRequest(
+                                type = "model-resave",
+                                protocolVersion = ProtocolVersion,
+                                token = record.token,
+                                modelTarget = modelTarget.pathString,
+                            ),
+                        ),
+                    )
+                    val responseLine = reader.readLine() ?: throw IllegalStateException("daemon closed connection")
+                    val status = GsonCodec.fromJson(responseLine, DaemonControlResponse::class.java)
+                    if (status.status == "ok") {
+                        GsonCodec.fromJson(responseLine, ModelResaveResponse::class.java)
+                    } else {
+                        val error = GsonCodec.fromJson(responseLine, DaemonErrorResponse::class.java)
+                        ModelResaveResponse(
+                            type = error.type,
+                            status = error.status,
+                            protocolVersion = error.protocolVersion,
+                            logPath = error.logPath,
+                            errorCode = error.errorCode,
+                            message = error.message,
+                        )
+                    }
+                }
+            }
+        }
+
+    private fun <T : Any> exchange(record: DaemonRecord, request: DaemonControlRequest, responseType: Class<T>): T =
+        Socket(InetAddress.getLoopbackAddress(), record.port).use { socket ->
+            socket.soTimeout = timeout.toMillis().toInt()
+            PrintWriter(socket.getOutputStream(), true).use { writer ->
+                BufferedReader(InputStreamReader(socket.getInputStream())).use { reader ->
+                    writer.println(GsonCodec.toJson(request))
+                    val responseLine = reader.readLine() ?: throw IllegalStateException("daemon closed connection")
+                    val status = GsonCodec.fromJson(responseLine, DaemonControlResponse::class.java)
+                    if (status.status != "ok") {
+                        throw IllegalStateException(status.message ?: "daemon returned ${status.status}")
+                    }
+                    GsonCodec.fromJson(responseLine, responseType)
+                }
+            }
+        }
+}
