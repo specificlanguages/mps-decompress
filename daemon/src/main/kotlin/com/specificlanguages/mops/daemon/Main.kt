@@ -293,24 +293,28 @@ class PersistentDaemonServer(
         }
     }
 
-    fun handle(requestLine: String?): PingResponse {
+    fun handle(requestLine: String?): DaemonResponse {
         val request = try {
             GsonCodec.fromJson(requestLine, DaemonRequest::class.java)
         } catch (_: RuntimeException) {
-            return error("ping", "INVALID_REQUEST", "request must be one newline-delimited JSON object")
+            return error("error", "INVALID_REQUEST", "request must be one newline-delimited JSON object")
         }
 
         if (request == null) {
-            return error("ping", "INVALID_REQUEST", "request must be one newline-delimited JSON object")
+            return error("error", "INVALID_REQUEST", "request must be one newline-delimited JSON object")
+        }
+        val requestType = request.type
+        if (requestType.isNullOrBlank()) {
+            return error("error", "INVALID_REQUEST", "request type is required")
         }
         if (request.protocolVersion != protocolVersion) {
-            return error(request.type, "PROTOCOL_MISMATCH", "unsupported protocol version ${request.protocolVersion}")
+            return error(requestType, "PROTOCOL_MISMATCH", "unsupported protocol version ${request.protocolVersion}")
         }
         if (request.token != expectedToken) {
-            return error(request.type, "TOKEN_MISMATCH", "invalid daemon token")
+            return error(requestType, "TOKEN_MISMATCH", "invalid daemon token")
         }
 
-        return when (request.type) {
+        return when (requestType) {
             "ping" -> PingResponse(
                 type = "ping",
                 status = "ok",
@@ -322,46 +326,31 @@ class PersistentDaemonServer(
                 ideaConfigPath = environment.ideaConfigDir.pathString,
                 ideaSystemPath = environment.ideaSystemDir.pathString,
             )
-            "stop" -> PingResponse(
+            "stop" -> DaemonControlResponse(
                 type = "stop",
                 status = "ok",
                 protocolVersion = protocolVersion,
-                projectPath = environment.projectPath.pathString,
-                mpsHome = environment.mpsHome.pathString,
-                environmentReady = true,
-                logPath = environment.logPath.pathString,
-                ideaConfigPath = environment.ideaConfigDir.pathString,
-                ideaSystemPath = environment.ideaSystemDir.pathString,
             )
-            "model-resave" -> PingResponse(
+            "model-resave" -> ModelResaveResponse(
                 type = "model-resave",
                 status = "error",
                 protocolVersion = protocolVersion,
                 projectPath = environment.projectPath.pathString,
                 mpsHome = environment.mpsHome.pathString,
-                environmentReady = true,
                 logPath = environment.logPath.pathString,
-                ideaConfigPath = environment.ideaConfigDir.pathString,
-                ideaSystemPath = environment.ideaSystemDir.pathString,
                 modelTarget = request.modelTarget,
                 errorCode = "NOT_IMPLEMENTED",
                 message = "model resave is routed through the MPS daemon, but the MPS API resave implementation is not wired yet",
             )
-            else -> error(request.type, "INVALID_REQUEST", "unsupported request type ${request.type}")
+            else -> error(requestType, "INVALID_REQUEST", "unsupported request type $requestType")
         }
     }
 
-    private fun error(type: String, code: String, message: String): PingResponse =
-        PingResponse(
+    private fun error(type: String, code: String, message: String): DaemonControlResponse =
+        DaemonControlResponse(
             type = type,
             status = "error",
             protocolVersion = protocolVersion,
-            projectPath = environment.projectPath.pathString,
-            mpsHome = environment.mpsHome.pathString,
-            environmentReady = true,
-            logPath = environment.logPath.pathString,
-            ideaConfigPath = environment.ideaConfigDir.pathString,
-            ideaSystemPath = environment.ideaSystemDir.pathString,
             errorCode = code,
             message = message,
         )
@@ -578,7 +567,7 @@ data class PingRequest(
 )
 
 data class DaemonRequest(
-    val type: String,
+    val type: String?,
     val protocolVersion: Int,
     val token: String,
     val modelTarget: String? = null,
@@ -596,17 +585,42 @@ data class DaemonRecord(
     val startupTime: String,
 )
 
+interface DaemonResponse {
+    val type: String
+    val status: String
+    val protocolVersion: Int
+}
+
 data class PingResponse(
-    val type: String,
-    val status: String,
-    val protocolVersion: Int,
+    override val type: String,
+    override val status: String,
+    override val protocolVersion: Int,
     val projectPath: String,
     val mpsHome: String,
     val environmentReady: Boolean = false,
     val logPath: String? = null,
     val ideaConfigPath: String? = null,
     val ideaSystemPath: String? = null,
-    val modelTarget: String? = null,
     val errorCode: String? = null,
     val message: String? = null,
-)
+) : DaemonResponse
+
+data class DaemonControlResponse(
+    override val type: String,
+    override val status: String,
+    override val protocolVersion: Int,
+    val errorCode: String? = null,
+    val message: String? = null,
+) : DaemonResponse
+
+data class ModelResaveResponse(
+    override val type: String,
+    override val status: String,
+    override val protocolVersion: Int,
+    val projectPath: String,
+    val mpsHome: String,
+    val modelTarget: String? = null,
+    val logPath: String? = null,
+    val errorCode: String? = null,
+    val message: String? = null,
+) : DaemonResponse

@@ -161,24 +161,40 @@ class SingleUsePingServerTest {
         assertTrue(latch.await(5, TimeUnit.SECONDS), "server did not bind a socket")
         assertEquals("ok", exchange(ready.port, PingRequest(type = "ping", protocolVersion = 1, token = "secret")).status)
         assertEquals("ok", exchange(ready.port, PingRequest(type = "ping", protocolVersion = 1, token = "secret")).status)
-        assertEquals("ok", exchange(ready.port, DaemonRequest(type = "stop", protocolVersion = 1, token = "secret")).status)
+        assertEquals("ok", exchangeControl(ready.port, DaemonRequest(type = "stop", protocolVersion = 1, token = "secret")).status)
         thread.join(5_000)
 
         assertTrue(!thread.isAlive, "server did not exit after stop")
     }
 
     @Test
+    fun `persistent server reports invalid request when request type is missing`() {
+        val server = persistentServer()
+
+        val response = server.handle("{}")
+
+        val error = response as DaemonControlResponse
+        assertEquals("error", error.type)
+        assertEquals("error", error.status)
+        assertEquals("INVALID_REQUEST", error.errorCode)
+        assertEquals("request type is required", error.message)
+    }
+
+    @Test
+    fun `persistent server reports invalid request when request type is null`() {
+        val server = persistentServer()
+
+        val response = server.handle("""{"type":null,"protocolVersion":1,"token":"secret"}""")
+
+        val error = response as DaemonControlResponse
+        assertEquals("error", error.type)
+        assertEquals("error", error.status)
+        assertEquals("INVALID_REQUEST", error.errorCode)
+    }
+
+    @Test
     fun `persistent server accepts model resave request and returns explicit scaffold error`() {
-        val server = PersistentDaemonServer(
-            environment = MpsEnvironmentState(
-                projectPath = Path.of("/project"),
-                mpsHome = Path.of("/mps"),
-                ideaConfigDir = Path.of("/state/config"),
-                ideaSystemDir = Path.of("/state/system"),
-                logPath = Path.of("/state/daemon.log"),
-            ),
-            expectedToken = "secret",
-        )
+        val server = persistentServer()
 
         val response = server.handle(
             gson.toJson(
@@ -191,11 +207,12 @@ class SingleUsePingServerTest {
             ),
         )
 
-        assertEquals("model-resave", response.type)
-        assertEquals("error", response.status)
-        assertEquals("NOT_IMPLEMENTED", response.errorCode)
-        assertEquals("/project/models/main.mps", response.modelTarget)
-        assertEquals("/state/daemon.log", response.logPath)
+        val resave = response as ModelResaveResponse
+        assertEquals("model-resave", resave.type)
+        assertEquals("error", resave.status)
+        assertEquals("NOT_IMPLEMENTED", resave.errorCode)
+        assertEquals("/project/models/main.mps", resave.modelTarget)
+        assertEquals("/state/daemon.log", resave.logPath)
     }
 
     @Test
@@ -257,6 +274,28 @@ class SingleUsePingServerTest {
                 }
             }
         }
+
+    private fun exchangeControl(port: Int, request: Any): DaemonControlResponse =
+        Socket(InetAddress.getLoopbackAddress(), port).use { socket ->
+            PrintWriter(socket.getOutputStream(), true).use { writer ->
+                BufferedReader(InputStreamReader(socket.getInputStream())).use { reader ->
+                    writer.println(gson.toJson(request))
+                    gson.fromJson(reader.readLine(), DaemonControlResponse::class.java)
+                }
+            }
+        }
+
+    private fun persistentServer(): PersistentDaemonServer =
+        PersistentDaemonServer(
+            environment = MpsEnvironmentState(
+                projectPath = Path.of("/project"),
+                mpsHome = Path.of("/mps"),
+                ideaConfigDir = Path.of("/state/config"),
+                ideaSystemDir = Path.of("/state/system"),
+                logPath = Path.of("/state/daemon.log"),
+            ),
+            expectedToken = "secret",
+        )
 }
 
 private class RecordingProjectSessionOpener : MpsProjectSessionOpener {
