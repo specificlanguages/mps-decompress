@@ -204,6 +204,9 @@ class DaemonStopCommand : Runnable {
     subcommands = [ModelResaveCommand::class],
 )
 class ModelCommand : Runnable {
+    @ParentCommand
+    lateinit var root: MopsCommand
+
     override fun run() {
         CommandLine(this).usage(System.out)
     }
@@ -211,11 +214,36 @@ class ModelCommand : Runnable {
 
 @Command(name = "resave", description = ["Resave one model through the mops daemon."])
 class ModelResaveCommand : Runnable {
+    @ParentCommand
+    lateinit var model: ModelCommand
+
+    @Spec
+    lateinit var spec: CommandSpec
+
     @Parameters(index = "0", paramLabel = "MODEL_TARGET", description = ["Persisted model path to resave."])
     lateinit var modelTarget: String
 
     override fun run() {
-        println("mops model resave is not implemented in this skeleton: $modelTarget")
+        val root = model.root
+        val mpsHome = resolveMpsHome(root.mpsHome, root.environment)
+            ?: throw CommandLine.ParameterException(
+                spec.commandLine(),
+                "model resave requires MPS home; pass --mps-home <path> or set MOPS_MPS_HOME",
+            )
+        val resolvedTarget = Path.of(modelTarget).absolute().normalize()
+        val projectPath = inferProjectPath(if (Files.isDirectory(resolvedTarget)) resolvedTarget else resolvedTarget.parent)
+            ?: throw CommandLine.ParameterException(
+                spec.commandLine(),
+                "cannot infer MPS project from model target: no .mps directory found from $resolvedTarget upward",
+            )
+
+        val response = root.launcher.resave(projectPath, Path.of(mpsHome).absolute(), resolvedTarget)
+        if (response.status == "ok") {
+            spec.commandLine().out.println("resaved ${response.modelTarget}")
+        } else {
+            val logSuffix = response.logPath?.let { " Daemon log: $it" } ?: ""
+            throw IllegalStateException("${response.message ?: "model resave failed"}$logSuffix")
+        }
     }
 }
 
@@ -248,6 +276,7 @@ data class PingResponse(
 
 interface DaemonProcessLauncher {
     fun ping(projectPath: Path, mpsHome: Path): PingResponse
+    fun resave(projectPath: Path, mpsHome: Path, modelTarget: Path): ModelResaveResponse
 }
 
 class ProcessDaemonLauncher(
@@ -255,6 +284,15 @@ class ProcessDaemonLauncher(
     private val timeout: Duration = Duration.ofSeconds(15),
 ) : DaemonProcessLauncher {
     override fun ping(projectPath: Path, mpsHome: Path): PingResponse {
+        return ensureDaemon(projectPath, mpsHome).ping
+    }
+
+    override fun resave(projectPath: Path, mpsHome: Path, modelTarget: Path): ModelResaveResponse {
+        val record = ensureDaemon(projectPath, mpsHome).record
+        return DaemonClient(timeout).resave(record, modelTarget.absolute().normalize())
+    }
+
+    private fun ensureDaemon(projectPath: Path, mpsHome: Path): DaemonReady {
         val records = DaemonRecordStore(environment)
         val normalizedProject = projectPath.absolute().normalize()
         val normalizedMpsHome = mpsHome.absolute().normalize()
@@ -273,7 +311,7 @@ class ProcessDaemonLauncher(
                             "project is already owned by a mops daemon with a different MPS home: ${existing.mpsHome}",
                         )
                     }
-                    return existingResponse
+                    return DaemonReady(existing, existingResponse)
                 }
             } else {
                 records.delete(normalizedProject)
@@ -283,18 +321,19 @@ class ProcessDaemonLauncher(
         val token = UUID.randomUUID().toString()
         val daemonClasspath = resolveDaemonClasspath()
         val launch = DaemonLaunch.prepare(normalizedProject, normalizedMpsHome, environment)
+        val runtimeClasspath = listOf(daemonClasspath, mpsRuntimeClasspath(normalizedMpsHome))
+            .filter { it.isNotBlank() }
+            .joinToString(File.pathSeparator)
         val process = ProcessBuilder(
             listOf(javaExecutable().pathString) +
                 launch.jvmArgs +
                 listOf(
                     "-cp",
-                    daemonClasspath,
+                    runtimeClasspath,
                     "com.specificlanguages.mops.daemon.MainKt",
                     "serve",
                     "--project-path",
                     launch.projectPath.pathString,
-                    "--mps-home",
-                    launch.mpsHome.pathString,
                     "--token",
                     token,
                     "--idea-config-dir",
@@ -341,7 +380,9 @@ class ProcessDaemonLauncher(
                 throw IllegalStateException("daemon ping failed with status ${response.status}")
             }
             startupSucceeded = true
-            return response
+            val record = records.read(normalizedProject)
+                ?: throw IllegalStateException("daemon did not write its project record")
+            return DaemonReady(record, response)
         } finally {
             if (!startupSucceeded && process.isAlive) {
                 process.destroyForcibly()
@@ -359,6 +400,25 @@ class ProcessDaemonLauncher(
             ?: throw IllegalStateException(
                 "cannot start daemon: set MOPS_DAEMON_CLASSPATH to the daemon runtime classpath",
             )
+
+    private fun mpsRuntimeClasspath(mpsHome: Path): String =
+        buildList {
+            addAll(jarsIn(mpsHome.resolve("lib")))
+            addAll(jarsIn(mpsHome.resolve("lib/modules")))
+        }.joinToString(File.pathSeparator)
+
+    private fun jarsIn(directory: Path): List<String> {
+        if (!Files.isDirectory(directory)) {
+            return emptyList()
+        }
+        return Files.list(directory).use { entries ->
+            entries
+                .filter { Files.isRegularFile(it) && it.fileName.toString().endsWith(".jar") }
+                .sorted()
+                .map { it.pathString }
+                .toList()
+        }
+    }
 
     private fun discoverLocalDaemonClasspath(): String? =
         System.getProperty("java.class.path")
@@ -413,6 +473,11 @@ class ProcessDaemonLauncher(
     private fun daemonStartupException(message: String, logPath: Path): IllegalStateException =
         IllegalStateException("$message. Daemon log: ${logPath.pathString}")
 }
+
+private data class DaemonReady(
+    val record: DaemonRecord,
+    val ping: PingResponse,
+)
 
 data class DaemonLaunch(
     val projectPath: Path,
@@ -570,6 +635,27 @@ class DaemonClient(
             responseType = DaemonControlResponse::class.java,
         )
 
+    fun resave(record: DaemonRecord, modelTarget: Path): ModelResaveResponse =
+        Socket(InetAddress.getLoopbackAddress(), record.port).use { socket ->
+            socket.soTimeout = timeout.toMillis().toInt()
+            PrintWriter(socket.getOutputStream(), true).use { writer ->
+                BufferedReader(InputStreamReader(socket.getInputStream())).use { reader ->
+                    writer.println(
+                        GsonCodec.toJson(
+                            DaemonControlRequest(
+                                type = "model-resave",
+                                protocolVersion = ProtocolVersion,
+                                token = record.token,
+                                modelTarget = modelTarget.pathString,
+                            ),
+                        ),
+                    )
+                    val responseLine = reader.readLine() ?: throw IllegalStateException("daemon closed connection")
+                    GsonCodec.fromJson(responseLine, ModelResaveResponse::class.java)
+                }
+            }
+        }
+
     private fun <T : Any> exchange(record: DaemonRecord, request: DaemonControlRequest, responseType: Class<T>): T =
         Socket(InetAddress.getLoopbackAddress(), record.port).use { socket ->
             socket.soTimeout = timeout.toMillis().toInt()
@@ -591,6 +677,7 @@ data class DaemonControlRequest(
     val type: String,
     val protocolVersion: Int,
     val token: String,
+    val modelTarget: String? = null,
 )
 
 data class DaemonControlResponse(
@@ -600,11 +687,24 @@ data class DaemonControlResponse(
     val message: String? = null,
 )
 
+data class ModelResaveResponse(
+    val type: String,
+    val status: String,
+    val protocolVersion: Int,
+    val projectPath: String,
+    val mpsHome: String,
+    val modelTarget: String? = null,
+    val logPath: String? = null,
+    val errorCode: String? = null,
+    val message: String? = null,
+)
+
 object MpsJvmArgs {
     fun forMpsHome(mpsHome: Path, ideaConfigDir: Path, ideaSystemDir: Path): List<String> {
         val mpsVersion = mpsVersion(mpsHome)
         return buildList {
             add("-Didea.max.intellisense.filesize=100000")
+            add("-Dmops.mps.home=${mpsHome.pathString}")
             add("-Didea.config.path=${ideaConfigDir.pathString}")
             add("-Didea.system.path=${ideaSystemDir.pathString}")
             if (mpsVersion != null && mpsVersion >= "2025.2") {

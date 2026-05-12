@@ -1,25 +1,39 @@
 package com.specificlanguages.mops.daemon
 
 import com.google.gson.Gson
+import de.itemis.mps.gradle.project.loader.EnvironmentKind
+import de.itemis.mps.gradle.project.loader.Plugin
+import de.itemis.mps.gradle.project.loader.ProjectLoader
 import java.io.BufferedReader
+import java.io.File
+import java.io.InputStream
 import java.io.InputStreamReader
 import java.io.PrintWriter
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.SocketTimeoutException
 import java.nio.file.Files
+import java.nio.file.FileVisitResult
 import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
 import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.BasicFileAttributes
 import java.time.Duration
 import java.time.Instant
+import java.util.Properties
+import java.util.jar.JarFile
+import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.io.path.createDirectories
+import kotlin.io.path.isDirectory
 import kotlin.io.path.pathString
 import kotlin.system.exitProcess
+import org.w3c.dom.Document
 import picocli.CommandLine
 import picocli.CommandLine.Command
 import picocli.CommandLine.Option
 
 private const val ProtocolVersion = 1
+private const val MpsHomeProperty = "mops.mps.home"
 private val GsonCodec = Gson()
 
 fun main(args: Array<String>) {
@@ -47,9 +61,6 @@ class ServeCommand : Runnable {
     @Option(names = ["--project-path"], required = true)
     lateinit var projectPath: String
 
-    @Option(names = ["--mps-home"], required = true)
-    lateinit var mpsHome: String
-
     @Option(names = ["--token"], required = true)
     lateinit var token: String
 
@@ -71,34 +82,35 @@ class ServeCommand : Runnable {
     override fun run() {
         val runtime = MpsRuntimeBootstrap(
             projectPath = Path.of(projectPath),
-            mpsHome = Path.of(mpsHome),
+            mpsHome = resolveMpsHomeFromRuntime(),
             ideaConfigDir = Path.of(ideaConfigDir),
             ideaSystemDir = Path.of(ideaSystemDir),
             logPath = Path.of(logPath),
         )
         try {
-            val environment = runtime.initialize()
-            PersistentDaemonServer(
-                environment = environment,
-                expectedToken = token,
-                idleTimeout = Duration.ofMillis(idleTimeoutMillis),
-            ).serve { ready ->
-                writeRecord(
-                    path = Path.of(recordPath),
-                    record = DaemonRecord(
-                        port = ready.port,
-                        token = token,
-                        pid = ProcessHandle.current().pid(),
-                        protocolVersion = ready.protocolVersion,
-                        daemonVersion = "0.3.0-SNAPSHOT",
-                        projectPath = environment.projectPath.pathString,
-                        mpsHome = environment.mpsHome.pathString,
-                        logPath = environment.logPath.pathString,
-                        startupTime = Instant.now().toString(),
-                    ),
-                )
-                println(GsonCodec.toJson(ready))
-                System.out.flush()
+            runtime.withLoadedProject { environment ->
+                PersistentDaemonServer(
+                    environment = environment,
+                    expectedToken = token,
+                    idleTimeout = Duration.ofMillis(idleTimeoutMillis),
+                ).serve { ready ->
+                    writeRecord(
+                        path = Path.of(recordPath),
+                        record = DaemonRecord(
+                            port = ready.port,
+                            token = token,
+                            pid = ProcessHandle.current().pid(),
+                            protocolVersion = ready.protocolVersion,
+                            daemonVersion = "0.3.0-SNAPSHOT",
+                            projectPath = environment.projectPath.pathString,
+                            mpsHome = environment.mpsHome.pathString,
+                            logPath = environment.logPath.pathString,
+                            startupTime = Instant.now().toString(),
+                        ),
+                    )
+                    println(GsonCodec.toJson(ready))
+                    System.out.flush()
+                }
             }
         } catch (exception: RuntimeException) {
             runtime.log("startup failed: ${exception.message}")
@@ -124,9 +136,6 @@ class SingleUsePingCommand : Runnable {
     @Option(names = ["--project-path"], required = true)
     lateinit var projectPath: String
 
-    @Option(names = ["--mps-home"], required = true)
-    lateinit var mpsHome: String
-
     @Option(names = ["--token"], required = true)
     lateinit var token: String
 
@@ -142,19 +151,20 @@ class SingleUsePingCommand : Runnable {
     override fun run() {
         val runtime = MpsRuntimeBootstrap(
             projectPath = Path.of(projectPath),
-            mpsHome = Path.of(mpsHome),
+            mpsHome = resolveMpsHomeFromRuntime(),
             ideaConfigDir = Path.of(ideaConfigDir),
             ideaSystemDir = Path.of(ideaSystemDir),
             logPath = Path.of(logPath),
         )
         try {
-            val environment = runtime.initialize()
-            SingleUsePingServer(
-                environment = environment,
-                expectedToken = token,
-            ).serveOnce { ready ->
-                println(GsonCodec.toJson(ready))
-                System.out.flush()
+            runtime.withLoadedProject { environment ->
+                SingleUsePingServer(
+                    environment = environment,
+                    expectedToken = token,
+                ).serveOnce { ready ->
+                    println(GsonCodec.toJson(ready))
+                    System.out.flush()
+                }
             }
         } catch (exception: RuntimeException) {
             runtime.log("startup failed: ${exception.message}")
@@ -162,6 +172,17 @@ class SingleUsePingCommand : Runnable {
         }
     }
 }
+
+private fun resolveMpsHomeFromRuntime(): Path =
+    System.getProperty(MpsHomeProperty)
+        ?.takeIf { it.isNotBlank() }
+        ?.let { Path.of(it) }
+        ?: System.getenv("MOPS_MPS_HOME")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { Path.of(it) }
+        ?: throw IllegalStateException(
+            "MPS home is not configured for the daemon JVM; expected -D$MpsHomeProperty=<path>",
+        )
 
 class SingleUsePingServer(
     private val environment: MpsEnvironmentState,
@@ -312,6 +333,20 @@ class PersistentDaemonServer(
                 ideaConfigPath = environment.ideaConfigDir.pathString,
                 ideaSystemPath = environment.ideaSystemDir.pathString,
             )
+            "model-resave" -> PingResponse(
+                type = "model-resave",
+                status = "error",
+                protocolVersion = protocolVersion,
+                projectPath = environment.projectPath.pathString,
+                mpsHome = environment.mpsHome.pathString,
+                environmentReady = true,
+                logPath = environment.logPath.pathString,
+                ideaConfigPath = environment.ideaConfigDir.pathString,
+                ideaSystemPath = environment.ideaSystemDir.pathString,
+                modelTarget = request.modelTarget,
+                errorCode = "NOT_IMPLEMENTED",
+                message = "model resave is routed through the MPS daemon, but the MPS API resave implementation is not wired yet",
+            )
             else -> error(request.type, "INVALID_REQUEST", "unsupported request type ${request.type}")
         }
     }
@@ -338,6 +373,7 @@ class MpsRuntimeBootstrap(
     private val ideaConfigDir: Path,
     private val ideaSystemDir: Path,
     private val logPath: Path,
+    private val projectSessionOpener: MpsProjectSessionOpener = ProjectLoaderMpsProjectSessionOpener(),
 ) {
     fun initialize(): MpsEnvironmentState {
         logPath.parent.createDirectories()
@@ -346,11 +382,11 @@ class MpsRuntimeBootstrap(
         requireDirectory(projectPath.resolve(".mps"), "MPS project marker")
         requireDirectory(mpsHome, "MPS home")
         requireFile(mpsHome.resolve("build.properties"), "MPS build properties")
+        requireDirectory(mpsHome.resolve("plugins"), "MPS plugins directory")
         ideaConfigDir.createDirectories()
         ideaSystemDir.createDirectories()
         log("idea.config.path=${ideaConfigDir.pathString}")
         log("idea.system.path=${ideaSystemDir.pathString}")
-        log("environment ready for project ${projectPath.pathString}")
 
         return MpsEnvironmentState(
             projectPath = projectPath,
@@ -359,6 +395,25 @@ class MpsRuntimeBootstrap(
             ideaSystemDir = ideaSystemDir,
             logPath = logPath,
         )
+    }
+
+    fun <T> withLoadedProject(action: (MpsEnvironmentState) -> T): T {
+        val environment = initialize()
+        val pluginRoot = mpsHome.resolve("plugins")
+        val plugins = PluginScanner.findPlugins(pluginRoot)
+        log("opening IDEA environment for project ${projectPath.pathString} with ${plugins.size} plugins from ${pluginRoot.pathString}")
+        return projectSessionOpener.withOpenProject(
+            MpsProjectSessionConfig(
+                projectPath = projectPath,
+                mpsHome = mpsHome,
+                pluginRoot = pluginRoot,
+                plugins = plugins,
+                buildNumber = mpsBuildNumber(mpsHome),
+            ),
+        ) {
+            log("environment ready for project ${projectPath.pathString}")
+            action(environment)
+        }
     }
 
     fun log(message: String) {
@@ -382,6 +437,124 @@ class MpsRuntimeBootstrap(
             throw IllegalStateException("$label is missing: ${path.pathString}")
         }
     }
+
+    private fun mpsBuildNumber(mpsHome: Path): String? =
+        Files.newInputStream(mpsHome.resolve("build.properties")).use { input ->
+            Properties().apply { load(input) }.getProperty("mps.build.number")
+        }
+}
+
+interface MpsProjectSessionOpener {
+    fun <T> withOpenProject(config: MpsProjectSessionConfig, action: () -> T): T
+}
+
+class ProjectLoaderMpsProjectSessionOpener : MpsProjectSessionOpener {
+    override fun <T> withOpenProject(config: MpsProjectSessionConfig, action: () -> T): T {
+        val loader = ProjectLoader.build {
+            environmentKind = EnvironmentKind.IDEA
+            buildNumber = config.buildNumber
+            environmentConfig {
+                pluginLocation = config.pluginRoot.toFile()
+                plugins.addAll(config.plugins.map { Plugin(it.id, it.path.pathString) })
+            }
+        }
+        return loader.executeWithProject(config.projectPath.toFile()) { _, _ -> action() }
+    }
+}
+
+data class MpsProjectSessionConfig(
+    val projectPath: Path,
+    val mpsHome: Path,
+    val pluginRoot: Path,
+    val plugins: List<DetectedPlugin>,
+    val buildNumber: String?,
+)
+
+data class DetectedPlugin(
+    val id: String,
+    val path: Path,
+)
+
+object PluginScanner {
+    fun findPlugins(root: Path): List<DetectedPlugin> {
+        if (!root.isDirectory()) {
+            return emptyList()
+        }
+        val plugins = mutableListOf<DetectedPlugin>()
+        Files.walkFileTree(root, object : SimpleFileVisitor<Path>() {
+            override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
+                val id = readPluginId(dir.toFile())
+                if (id != null) {
+                    plugins.add(DetectedPlugin(id, dir.toAbsolutePath().normalize()))
+                    return FileVisitResult.SKIP_SUBTREE
+                }
+                return FileVisitResult.CONTINUE
+            }
+        })
+        return plugins
+    }
+
+    private fun readPluginId(pluginDirectory: File): String? {
+        val pluginXml = findPluginDescriptor(pluginDirectory) ?: return null
+        val ids = pluginXml.documentElement.getElementsByTagName("id")
+        if (ids.length != 1) {
+            return null
+        }
+        return ids.item(0).textContent.takeIf { it.isNotBlank() }
+    }
+
+    private fun findPluginDescriptor(pluginDirectory: File): Document? {
+        val libDir = pluginDirectory.resolve("lib")
+        if (libDir.isDirectory) {
+            libDir.listFiles { file -> file.isFile && file.name.endsWith(".jar") }
+                ?.forEach { jar ->
+                    readDescriptorFromJarFile(jar)?.let { return it }
+                }
+        }
+
+        val pluginXmlFile = pluginDirectory.resolve("META-INF/plugin.xml")
+        return if (pluginXmlFile.isFile) {
+            readXmlFile(pluginXmlFile)
+        } else {
+            null
+        }
+    }
+
+    private fun readDescriptorFromJarFile(file: File): Document? =
+        try {
+            JarFile(file).use { jarFile ->
+                val jarEntry = jarFile.getJarEntry("META-INF/plugin.xml") ?: return null
+                jarFile.getInputStream(jarEntry).use {
+                    readXmlFile(it, "${file}!${jarEntry.name}")
+                }
+            }
+        } catch (_: Exception) {
+            null
+        }
+
+    private fun readXmlFile(file: File): Document? =
+        try {
+            newDocumentBuilder().parse(file)
+        } catch (_: Exception) {
+            null
+        }
+
+    private fun readXmlFile(stream: InputStream, name: String): Document? =
+        try {
+            newDocumentBuilder().parse(stream, name)
+        } catch (_: Exception) {
+            null
+        }
+
+    private fun newDocumentBuilder() =
+        DocumentBuilderFactory.newInstance().apply {
+            isValidating = false
+            isNamespaceAware = true
+            setFeature("http://xml.org/sax/features/namespaces", false)
+            setFeature("http://xml.org/sax/features/validation", false)
+            setFeature("http://apache.org/xml/features/nonvalidating/load-dtd-grammar", false)
+            setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+        }.newDocumentBuilder()
 }
 
 data class MpsEnvironmentState(
@@ -408,6 +581,7 @@ data class DaemonRequest(
     val type: String,
     val protocolVersion: Int,
     val token: String,
+    val modelTarget: String? = null,
 )
 
 data class DaemonRecord(
@@ -432,6 +606,7 @@ data class PingResponse(
     val logPath: String? = null,
     val ideaConfigPath: String? = null,
     val ideaSystemPath: String? = null,
+    val modelTarget: String? = null,
     val errorCode: String? = null,
     val message: String? = null,
 )

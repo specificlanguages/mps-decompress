@@ -102,6 +102,53 @@ class DaemonPingCommandTest {
     }
 
     @Test
+    fun `model resave routes target through daemon launcher`() {
+        val project = tempDir.resolve("project").createDirectories()
+        project.resolve(".mps").createDirectory()
+        val model = project.resolve("solutions/foo/models/main.mps")
+        model.parent.createDirectories()
+        java.nio.file.Files.writeString(model, "<model />")
+        val launcher = RecordingLauncher()
+        val stdout = ByteArrayOutputStream()
+
+        val exitCode = newCommandLine(
+            launcher = launcher,
+            environment = emptyMap(),
+            workingDirectory = tempDir,
+        ).also {
+            it.out = PrintWriter(stdout, true)
+        }.execute("--mps-home", "/opt/mps", "model", "resave", model.pathString)
+
+        assertEquals(0, exitCode)
+        assertEquals(project, launcher.projectPath)
+        assertEquals(Path.of("/opt/mps").toAbsolutePath(), launcher.mpsHome)
+        assertEquals(model.toAbsolutePath().normalize(), launcher.modelTarget)
+        assertContains(stdout.toString(), "resaved")
+        assertContains(stdout.toString(), model.pathString)
+    }
+
+    @Test
+    fun `model resave requires mps home`() {
+        val project = tempDir.resolve("project").createDirectories()
+        project.resolve(".mps").createDirectory()
+        val model = project.resolve("models/main.mps")
+        model.parent.createDirectories()
+        val stderr = ByteArrayOutputStream()
+
+        val exitCode = newCommandLine(
+            launcher = RecordingLauncher(),
+            environment = emptyMap(),
+            workingDirectory = tempDir,
+        ).also {
+            it.err = PrintWriter(stderr, true)
+        }.execute("model", "resave", model.pathString)
+
+        assertEquals(2, exitCode)
+        assertContains(stderr.toString(), "model resave requires MPS home")
+        assertContains(stderr.toString(), "MOPS_MPS_HOME")
+    }
+
+    @Test
     fun `mps home resolver prefers explicit option`() {
         assertEquals("/cli", resolveMpsHome("/cli", mapOf("MOPS_MPS_HOME" to "/env")))
         assertEquals("/env", resolveMpsHome(null, mapOf("MOPS_MPS_HOME" to "/env")))
@@ -137,6 +184,7 @@ class DaemonPingCommandTest {
         assertTrue(!launch.ideaConfigDir.pathString.startsWith(project.pathString))
         assertTrue(launch.ideaConfigDir.exists())
         assertTrue(launch.ideaSystemDir.exists())
+        assertContains(launch.jvmArgs, "-Dmops.mps.home=${mpsHome.pathString}")
         assertContains(launch.jvmArgs, "-Didea.config.path=${launch.ideaConfigDir.pathString}")
         assertContains(launch.jvmArgs, "-Didea.system.path=${launch.ideaSystemDir.pathString}")
         assertContains(launch.jvmArgs, "-Djna.boot.library.path=${mpsHome.resolve("lib/jna").pathString}")
@@ -489,6 +537,7 @@ class DaemonPingCommandTest {
 private class RecordingLauncher : DaemonProcessLauncher {
     var projectPath: Path? = null
     var mpsHome: Path? = null
+    var modelTarget: Path? = null
 
     override fun ping(projectPath: Path, mpsHome: Path): PingResponse {
         this.projectPath = projectPath
@@ -500,6 +549,20 @@ private class RecordingLauncher : DaemonProcessLauncher {
             projectPath = projectPath.pathString,
             mpsHome = mpsHome.pathString,
             environmentReady = true,
+        )
+    }
+
+    override fun resave(projectPath: Path, mpsHome: Path, modelTarget: Path): ModelResaveResponse {
+        this.projectPath = projectPath
+        this.mpsHome = mpsHome
+        this.modelTarget = modelTarget
+        return ModelResaveResponse(
+            type = "model-resave",
+            status = "ok",
+            protocolVersion = 1,
+            projectPath = projectPath.pathString,
+            mpsHome = mpsHome.pathString,
+            modelTarget = modelTarget.pathString,
         )
     }
 }

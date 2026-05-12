@@ -12,6 +12,7 @@ subprojects {
 
     repositories {
         mavenCentral()
+        maven("https://artifacts.itemis.cloud/repository/maven-mps")
     }
 }
 

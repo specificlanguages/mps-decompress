@@ -65,6 +65,7 @@ class SingleUsePingServerTest {
         project.resolve(".mps").createDirectory()
         val mpsHome = tempDir.resolve("mps").createDirectories()
         java.nio.file.Files.writeString(mpsHome.resolve("build.properties"), "mps.build.number=2024.1\n")
+        mpsHome.resolve("plugins").createDirectory()
         val state = tempDir.resolve("state")
         val bootstrap = MpsRuntimeBootstrap(
             projectPath = project,
@@ -80,7 +81,36 @@ class SingleUsePingServerTest {
         assertTrue(environment.ideaSystemDir.exists())
         assertTrue(environment.logPath.exists())
         assertTrue(!environment.ideaConfigDir.pathString.startsWith(project.pathString))
-        assertTrue(java.nio.file.Files.readString(environment.logPath).contains("environment ready"))
+        assertTrue(java.nio.file.Files.readString(environment.logPath).contains("idea.config.path"))
+    }
+
+    @Test
+    fun `runtime bootstrap opens project through configured IDEA project session`() {
+        val project = tempDir.resolve("project").createDirectories()
+        project.resolve(".mps").createDirectory()
+        val mpsHome = tempDir.resolve("mps").createDirectories()
+        java.nio.file.Files.writeString(mpsHome.resolve("build.properties"), "mps.build.number=2024.1\n")
+        val plugin = mpsHome.resolve("plugins/mps-example/META-INF").createDirectories()
+        java.nio.file.Files.writeString(plugin.resolve("plugin.xml"), "<idea-plugin><id>com.example.plugin</id></idea-plugin>")
+        val opener = RecordingProjectSessionOpener()
+        val bootstrap = MpsRuntimeBootstrap(
+            projectPath = project,
+            mpsHome = mpsHome,
+            ideaConfigDir = tempDir.resolve("state/config"),
+            ideaSystemDir = tempDir.resolve("state/system"),
+            logPath = tempDir.resolve("state/logs/daemon.log"),
+            projectSessionOpener = opener,
+        )
+
+        bootstrap.withLoadedProject { environment ->
+            assertEquals(project, environment.projectPath)
+        }
+
+        val config = opener.config ?: error("project session was not opened")
+        assertEquals(project, config.projectPath)
+        assertEquals(mpsHome.resolve("plugins"), config.pluginRoot)
+        assertEquals("2024.1", config.buildNumber)
+        assertEquals(listOf("com.example.plugin"), config.plugins.map { it.id })
     }
 
     @Test
@@ -137,6 +167,52 @@ class SingleUsePingServerTest {
         assertTrue(!thread.isAlive, "server did not exit after stop")
     }
 
+    @Test
+    fun `persistent server accepts model resave request and returns explicit scaffold error`() {
+        val server = PersistentDaemonServer(
+            environment = MpsEnvironmentState(
+                projectPath = Path.of("/project"),
+                mpsHome = Path.of("/mps"),
+                ideaConfigDir = Path.of("/state/config"),
+                ideaSystemDir = Path.of("/state/system"),
+                logPath = Path.of("/state/daemon.log"),
+            ),
+            expectedToken = "secret",
+        )
+
+        val response = server.handle(
+            gson.toJson(
+                DaemonRequest(
+                    type = "model-resave",
+                    protocolVersion = 1,
+                    token = "secret",
+                    modelTarget = "/project/models/main.mps",
+                ),
+            ),
+        )
+
+        assertEquals("model-resave", response.type)
+        assertEquals("error", response.status)
+        assertEquals("NOT_IMPLEMENTED", response.errorCode)
+        assertEquals("/project/models/main.mps", response.modelTarget)
+        assertEquals("/state/daemon.log", response.logPath)
+    }
+
+    @Test
+    fun `plugin scanner detects plugins under MPS plugins root`() {
+        val pluginsRoot = tempDir.resolve("mps/plugins").createDirectories()
+        val pluginMeta = pluginsRoot.resolve("mps-example/META-INF").createDirectories()
+        java.nio.file.Files.writeString(
+            pluginMeta.resolve("plugin.xml"),
+            "<idea-plugin><id>com.example.plugin</id></idea-plugin>",
+        )
+
+        val plugins = PluginScanner.findPlugins(pluginsRoot)
+
+        assertEquals(listOf("com.example.plugin"), plugins.map { it.id })
+        assertEquals(pluginsRoot.resolve("mps-example").toAbsolutePath().normalize(), plugins.single().path)
+    }
+
     private fun exchange(request: PingRequest): PingResponse {
         val latch = CountDownLatch(1)
         lateinit var ready: ReadyMessage
@@ -181,4 +257,13 @@ class SingleUsePingServerTest {
                 }
             }
         }
+}
+
+private class RecordingProjectSessionOpener : MpsProjectSessionOpener {
+    var config: MpsProjectSessionConfig? = null
+
+    override fun <T> withOpenProject(config: MpsProjectSessionConfig, action: () -> T): T {
+        this.config = config
+        return action()
+    }
 }
