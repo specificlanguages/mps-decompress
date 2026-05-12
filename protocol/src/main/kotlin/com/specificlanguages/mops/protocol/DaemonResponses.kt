@@ -42,3 +42,10 @@ data class ModelResaveResponse(
     override val protocolVersion: Int,
     val modelTarget: String,
 ) : DaemonResponse
+
+data class ReadyMessage(
+    override val type: String = "ready",
+    override val status: String = "ok",
+    override val protocolVersion: Int,
+    val port: Int,
+) : DaemonResponse
