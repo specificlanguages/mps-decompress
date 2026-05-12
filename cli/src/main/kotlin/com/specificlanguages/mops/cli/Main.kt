@@ -651,7 +651,20 @@ class DaemonClient(
                         ),
                     )
                     val responseLine = reader.readLine() ?: throw IllegalStateException("daemon closed connection")
-                    GsonCodec.fromJson(responseLine, ModelResaveResponse::class.java)
+                    val status = GsonCodec.fromJson(responseLine, DaemonControlResponse::class.java)
+                    if (status.status == "ok") {
+                        GsonCodec.fromJson(responseLine, ModelResaveResponse::class.java)
+                    } else {
+                        val error = GsonCodec.fromJson(responseLine, DaemonErrorResponse::class.java)
+                        ModelResaveResponse(
+                            type = error.type,
+                            status = error.status,
+                            protocolVersion = error.protocolVersion,
+                            logPath = error.logPath,
+                            errorCode = error.errorCode,
+                            message = error.message,
+                        )
+                    }
                 }
             }
         }
@@ -691,12 +704,19 @@ data class ModelResaveResponse(
     val type: String,
     val status: String,
     val protocolVersion: Int,
-    val projectPath: String,
-    val mpsHome: String,
     val modelTarget: String? = null,
     val logPath: String? = null,
     val errorCode: String? = null,
     val message: String? = null,
+)
+
+data class DaemonErrorResponse(
+    val type: String,
+    val status: String,
+    val protocolVersion: Int,
+    val errorCode: String,
+    val message: String,
+    val logPath: String? = null,
 )
 
 object MpsJvmArgs {

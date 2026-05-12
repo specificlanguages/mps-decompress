@@ -560,8 +560,6 @@ private class RecordingLauncher : DaemonProcessLauncher {
             type = "model-resave",
             status = "ok",
             protocolVersion = 1,
-            projectPath = projectPath.pathString,
-            mpsHome = mpsHome.pathString,
             modelTarget = modelTarget.pathString,
         )
     }
