@@ -38,7 +38,8 @@ class ModelResaveCommand : Runnable {
                 "cannot infer MPS project from model target: no .mps directory found from $resolvedTarget upward",
             )
 
-        val response = root.launcher.resave(projectPath, Path.of(mpsHome).absolute(), resolvedTarget)
+        val javaHome = root.javaHome?.takeIf { it.isNotBlank() }?.let { Path.of(it).absolute() }
+        val response = root.launcher.resave(projectPath, Path.of(mpsHome).absolute(), javaHome, resolvedTarget)
         when (response) {
             is ModelResaveResponse -> spec.commandLine().out.println("resaved ${response.modelTarget}")
             is DaemonErrorResponse -> {

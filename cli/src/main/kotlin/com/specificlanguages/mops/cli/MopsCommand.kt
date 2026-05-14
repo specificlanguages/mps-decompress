@@ -28,6 +28,13 @@ class MopsCommand(
     )
     var mpsHome: String? = null
 
+    @Option(
+        names = ["--java-home"],
+        paramLabel = "PATH",
+        description = ["Java home used to start daemon-backed commands."],
+    )
+    var javaHome: String? = null
+
     override fun run() {
         CommandLine(this).usage(System.out)
     }

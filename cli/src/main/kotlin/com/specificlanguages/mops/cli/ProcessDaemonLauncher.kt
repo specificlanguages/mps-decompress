@@ -24,16 +24,16 @@ class ProcessDaemonLauncher(
     private val environment: Map<String, String> = System.getenv(),
     private val timeout: Duration = Duration.ofSeconds(15),
 ) : DaemonProcessLauncher {
-    override fun ping(projectPath: Path, mpsHome: Path): PingResponse {
-        return ensureDaemon(projectPath, mpsHome).ping
+    override fun ping(projectPath: Path, mpsHome: Path, javaHome: Path?): PingResponse {
+        return ensureDaemon(projectPath, mpsHome, javaHome).ping
     }
 
-    override fun resave(projectPath: Path, mpsHome: Path, modelTarget: Path): DaemonResponse {
-        val record = ensureDaemon(projectPath, mpsHome).record
+    override fun resave(projectPath: Path, mpsHome: Path, javaHome: Path?, modelTarget: Path): DaemonResponse {
+        val record = ensureDaemon(projectPath, mpsHome, javaHome).record
         return DaemonClient(timeout).resave(record, modelTarget.absolute().normalize())
     }
 
-    private fun ensureDaemon(projectPath: Path, mpsHome: Path): DaemonReady {
+    private fun ensureDaemon(projectPath: Path, mpsHome: Path, javaHome: Path?): DaemonReady {
         val records = DaemonRecordStore(environment)
         val normalizedProject = projectPath.absolute().normalize()
         val normalizedMpsHome = mpsHome.absolute().normalize()
@@ -65,8 +65,8 @@ class ProcessDaemonLauncher(
         val runtimeClasspath = listOf(daemonClasspath, mpsRuntimeClasspath(normalizedMpsHome))
             .filter { it.isNotBlank() }
             .joinToString(File.pathSeparator)
-        val process = ProcessBuilder(
-            listOf(javaExecutable().pathString) +
+        val processBuilder = ProcessBuilder(
+            listOf(DaemonJavaHome.executable(javaHome, normalizedMpsHome).pathString) +
                 launch.jvmArgs +
                 listOf(
                     "-cp",
@@ -74,6 +74,8 @@ class ProcessDaemonLauncher(
                     "com.specificlanguages.mops.daemon.MainKt",
                     "--project-path",
                     launch.projectPath.pathString,
+                    "--mps-home",
+                    launch.mpsHome.pathString,
                     "--token",
                     token,
                     "--idea-config-dir",
@@ -88,14 +90,17 @@ class ProcessDaemonLauncher(
         )
             .directory(launch.workDir.toFile())
             .redirectError(ProcessBuilder.Redirect.appendTo(launch.logPath.toFile()))
-            .start()
+        processBuilder.environment().putAll(environment)
+        processBuilder.environment()["MOPS_MPS_HOME"] = normalizedMpsHome.pathString
+        val process = processBuilder.start()
 
         var startupSucceeded = false
+        var startupFailure: Throwable? = null
         try {
             val stdout = BufferedReader(InputStreamReader(process.inputStream))
             val readyLine = readLineWithProcessCheck(stdout, process, launch.logPath)
-            val ready = GsonCodec.fromJson(readyLine, ReadyMessage::class.java)
-            if (ready.type != "ready" || ready.protocolVersion != ProtocolVersion) {
+            val ready = parseStartupMessage(readyLine, launch.logPath)
+            if (ready.protocolVersion != ProtocolVersion) {
                 throw IllegalStateException("daemon did not report a compatible ready message")
             }
 
@@ -123,11 +128,14 @@ class ProcessDaemonLauncher(
             val record = records.read(normalizedProject)
                 ?: throw IllegalStateException("daemon did not write its project record")
             return DaemonReady(record, response)
+        } catch (failure: Throwable) {
+            startupFailure = failure
+            throw failure
         } finally {
             if (!startupSucceeded && process.isAlive) {
                 process.destroyForcibly()
             }
-            if (!startupSucceeded && !process.isAlive && process.exitValue() != 0) {
+            if (!startupSucceeded && startupFailure == null && !process.isAlive && process.exitValue() != 0) {
                 throw daemonStartupException("daemon exited with status ${process.exitValue()}", launch.logPath)
             }
         }
@@ -193,9 +201,6 @@ class ProcessDaemonLauncher(
         }
     }
 
-    private fun javaExecutable(): Path =
-        Path.of(System.getProperty("java.home"), "bin", if (System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java")
-
     private fun readLineWithProcessCheck(reader: BufferedReader, process: Process, logPath: Path): String {
         val deadline = System.nanoTime() + timeout.toNanos()
         while (System.nanoTime() < deadline) {
@@ -210,8 +215,38 @@ class ProcessDaemonLauncher(
         throw daemonStartupException("timed out waiting for daemon socket port", logPath)
     }
 
+    private fun parseStartupMessage(line: String, fallbackLogPath: Path): ReadyMessage {
+        val message = GsonCodec.fromJson(line, DaemonStartupMessage::class.java)
+            ?: throw IllegalStateException("daemon did not report a startup message")
+        if (message.status == "error" || message.type == "error") {
+            val detail = listOfNotNull(message.errorCode, message.message).joinToString(": ")
+                .ifBlank { "unknown daemon startup error" }
+            val logPath = message.logPath?.let { Path.of(it) } ?: fallbackLogPath
+            throw daemonStartupException("daemon startup failed: $detail", logPath)
+        }
+        if (message.type != "ready" || message.port == null) {
+            throw IllegalStateException("daemon did not report a compatible ready message")
+        }
+        return ReadyMessage(
+            type = "ready",
+            status = message.status ?: "ok",
+            protocolVersion = message.protocolVersion,
+            port = message.port,
+        )
+    }
+
     private fun daemonStartupException(message: String, logPath: Path): IllegalStateException =
         IllegalStateException("$message. Daemon log: ${logPath.pathString}")
+
+    private data class DaemonStartupMessage(
+        val type: String? = null,
+        val status: String? = null,
+        val protocolVersion: Int = 0,
+        val port: Int? = null,
+        val errorCode: String? = null,
+        val message: String? = null,
+        val logPath: String? = null,
+    )
 
     private data class DaemonReady(
         val record: DaemonRecord,

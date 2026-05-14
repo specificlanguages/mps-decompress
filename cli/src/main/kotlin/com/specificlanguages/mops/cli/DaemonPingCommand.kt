@@ -30,7 +30,8 @@ class DaemonPingCommand : Runnable {
                 "cannot infer MPS project: no .mps directory found from ${root.workingDirectory.absolute()} upward",
             )
 
-        val response = root.launcher.ping(projectPath, Path.of(mpsHome).absolute())
+        val javaHome = root.javaHome?.takeIf { it.isNotBlank() }?.let { Path.of(it).absolute() }
+        val response = root.launcher.ping(projectPath, Path.of(mpsHome).absolute(), javaHome)
         spec.commandLine().out.println(GsonCodec.toJson(response))
     }
 }

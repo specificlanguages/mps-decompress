@@ -5,6 +5,6 @@ import com.specificlanguages.mops.protocol.PingResponse
 import java.nio.file.Path
 
 interface DaemonProcessLauncher {
-    fun ping(projectPath: Path, mpsHome: Path): PingResponse
-    fun resave(projectPath: Path, mpsHome: Path, modelTarget: Path): DaemonResponse
+    fun ping(projectPath: Path, mpsHome: Path, javaHome: Path?): PingResponse
+    fun resave(projectPath: Path, mpsHome: Path, javaHome: Path?, modelTarget: Path): DaemonResponse
 }

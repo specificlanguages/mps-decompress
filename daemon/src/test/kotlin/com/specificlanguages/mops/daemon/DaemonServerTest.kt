@@ -6,6 +6,7 @@ import com.specificlanguages.mops.protocol.DaemonControlResponse
 import com.specificlanguages.mops.protocol.DaemonErrorResponse
 import com.specificlanguages.mops.protocol.PingResponse
 import com.specificlanguages.mops.protocol.ReadyMessage
+import java.io.ByteArrayOutputStream
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter
@@ -19,10 +20,12 @@ import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.pathString
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.io.TempDir
+import picocli.CommandLine
 
 class DaemonServerTest {
     private val gson = Gson()
@@ -139,6 +142,51 @@ class DaemonServerTest {
 
         assertTrue(java.nio.file.Files.readString(logPath).contains("startup failed"))
         assertTrue(java.nio.file.Files.readString(logPath).contains("MPS home is not a directory"))
+    }
+
+    @Test
+    fun `daemon command reports JVM incompatibility as startup error before ready`() {
+        val project = tempDir.resolve("project").createDirectories()
+        project.resolve(".mps").createDirectory()
+        val mpsHome = tempDir.resolve("mps").createDirectories()
+        val logPath = tempDir.resolve("state/logs/daemon.log")
+        val stdout = ByteArrayOutputStream()
+
+        val exitCode = CommandLine(
+            MopsDaemonCommand(
+                jvmCompatibility = {
+                    MpsJvmCompatibility.Failure(
+                        code = "JVM_VERSION_MISMATCH",
+                        message = "daemon JVM 17 is not compatible with this MPS version",
+                    )
+                },
+            ),
+        ).also {
+            it.out = PrintWriter(stdout, true)
+        }.execute(
+            "--project-path",
+            project.pathString,
+            "--mps-home",
+            mpsHome.pathString,
+            "--token",
+            "secret",
+            "--idea-config-dir",
+            tempDir.resolve("state/config").pathString,
+            "--idea-system-dir",
+            tempDir.resolve("state/system").pathString,
+            "--log-path",
+            logPath.pathString,
+            "--record-path",
+            tempDir.resolve("state/daemon.json").pathString,
+        )
+
+        val error = gson.fromJson(stdout.toString().trim(), DaemonErrorResponse::class.java)
+        assertEquals(1, exitCode)
+        assertEquals("error", error.type)
+        assertEquals("error", error.status)
+        assertEquals("JVM_VERSION_MISMATCH", error.errorCode)
+        assertContains(error.message, "daemon JVM 17")
+        assertEquals(logPath.pathString, error.logPath)
     }
 
     @Test

@@ -70,6 +70,22 @@ class DaemonPingCommandTest {
     }
 
     @Test
+    fun `daemon ping passes explicit java home to daemon launcher`() {
+        val project = tempDir.resolve("project").createDirectories()
+        project.resolve(".mps").createDirectory()
+        val launcher = RecordingLauncher()
+
+        val exitCode = newCommandLine(
+            launcher = launcher,
+            environment = emptyMap(),
+            workingDirectory = project,
+        ).execute("--java-home", "/opt/jbr", "--mps-home", "/opt/mps", "daemon", "ping")
+
+        assertEquals(0, exitCode)
+        assertEquals(Path.of("/opt/jbr").toAbsolutePath(), launcher.javaHome)
+    }
+
+    @Test
     fun `daemon ping reports missing mps home`() {
         val project = tempDir.resolve("project").createDirectories()
         project.resolve(".mps").createDirectory()
@@ -120,11 +136,12 @@ class DaemonPingCommandTest {
             workingDirectory = tempDir,
         ).also {
             it.out = PrintWriter(stdout, true)
-        }.execute("--mps-home", "/opt/mps", "model", "resave", model.pathString)
+        }.execute("--java-home", "/opt/jbr", "--mps-home", "/opt/mps", "model", "resave", model.pathString)
 
         assertEquals(0, exitCode)
         assertEquals(project, launcher.projectPath)
         assertEquals(Path.of("/opt/mps").toAbsolutePath(), launcher.mpsHome)
+        assertEquals(Path.of("/opt/jbr").toAbsolutePath(), launcher.javaHome)
         assertEquals(model.toAbsolutePath().normalize(), launcher.modelTarget)
         assertContains(stdout.toString(), "resaved")
         assertContains(stdout.toString(), model.pathString)
@@ -156,6 +173,20 @@ class DaemonPingCommandTest {
         assertEquals("/cli", resolveMpsHome("/cli", mapOf("MOPS_MPS_HOME" to "/env")))
         assertEquals("/env", resolveMpsHome(null, mapOf("MOPS_MPS_HOME" to "/env")))
         assertNull(resolveMpsHome("", mapOf("MOPS_MPS_HOME" to "")))
+    }
+
+    @Test
+    fun `daemon java executable uses platform specific layout`() {
+        val macHome = tempDir.resolve("mac-jbr").createDirectories()
+        val macExecutable = macHome.resolve("Contents/Home/bin/java")
+        macExecutable.parent.createDirectories()
+        java.nio.file.Files.writeString(macExecutable, "")
+        val windowsHome = tempDir.resolve("windows-jbr").createDirectories()
+        val linuxHome = tempDir.resolve("linux-jbr").createDirectories()
+
+        assertEquals(macExecutable, DaemonJavaHome.executableIn(macHome, "Mac OS X"))
+        assertEquals(windowsHome.resolve("bin/java.exe"), DaemonJavaHome.executableIn(windowsHome, "Windows 11"))
+        assertEquals(linuxHome.resolve("bin/java"), DaemonJavaHome.executableIn(linuxHome, "Linux"))
     }
 
     @Test
@@ -420,7 +451,7 @@ class DaemonPingCommandTest {
         assertFailsWith<IllegalStateException> {
             ProcessDaemonLauncher(
                 environment = mapOf("MOPS_DAEMON_HOME" to daemonHome.pathString),
-            ).ping(project, Path.of("/opt/mps"))
+            ).ping(project, Path.of("/opt/mps"), null)
         }
 
         assertNull(store.read(project))
@@ -463,7 +494,7 @@ class DaemonPingCommandTest {
         val exception = assertFailsWith<IllegalStateException> {
             ProcessDaemonLauncher(
                 environment = mapOf("MOPS_DAEMON_HOME" to daemonHome.pathString),
-            ).ping(project, Path.of("/opt/mps"))
+            ).ping(project, Path.of("/opt/mps"), null)
         }
 
         serverThread.join(5_000)
@@ -494,7 +525,7 @@ class DaemonPingCommandTest {
         assertFailsWith<IllegalStateException> {
             ProcessDaemonLauncher(
                 environment = mapOf("MOPS_DAEMON_HOME" to daemonHome.pathString),
-            ).ping(project, Path.of("/new/mps"))
+            ).ping(project, Path.of("/new/mps"), null)
         }
 
         assertNull(store.read(project))
@@ -514,13 +545,66 @@ class DaemonPingCommandTest {
                     "MOPS_DAEMON_HOME" to daemonHome.pathString,
                     "MOPS_DAEMON_CLASSPATH" to classpath,
                 ),
-            ).ping(project, mpsHome)
+            ).ping(project, mpsHome, null)
         }
 
         assertContains(exception.message ?: "", "compatible ready message")
         val pidFile = daemonHome.resolve("projects/${DaemonRecordStore.projectKey(project)}/logs/fake-daemon.pid")
         val pid = pidFile.readText().trim().toLong()
         assertProcessStops(pid)
+    }
+
+    @Test
+    fun `daemon ping starts daemon with bundled MPS jbr when java home is not explicit`() {
+        val project = tempDir.resolve("project").createDirectories()
+        project.resolve(".mps").createDirectory()
+        val mpsHome = tempDir.resolve("mps").createDirectories()
+        val daemonHome = tempDir.resolve("daemon-home")
+        val selectedJava = daemonHome.resolve("selected-java.txt")
+        val bundledJava = mpsHome.resolve("jbr/bin/java")
+        bundledJava.parent.createDirectories()
+        java.nio.file.Files.writeString(
+            bundledJava,
+            """
+            #!/bin/sh
+            echo "$0" > "${selectedJava.pathString}"
+            exec "${currentJavaExecutable().pathString}" "$@"
+            """.trimIndent(),
+        )
+        bundledJava.toFile().setExecutable(true)
+
+        assertFailsWith<IllegalStateException> {
+            ProcessDaemonLauncher(
+                environment = mapOf(
+                    "MOPS_DAEMON_HOME" to daemonHome.pathString,
+                    "MOPS_DAEMON_CLASSPATH" to System.getProperty("java.class.path"),
+                ),
+            ).ping(project, mpsHome, null)
+        }
+
+        assertEquals(bundledJava.pathString, selectedJava.readText().trim())
+    }
+
+    @Test
+    fun `daemon ping reports startup error emitted before ready`() {
+        val project = tempDir.resolve("project").createDirectories()
+        project.resolve(".mps").createDirectory()
+        val mpsHome = tempDir.resolve("mps").createDirectories()
+        val daemonHome = tempDir.resolve("daemon-home")
+
+        val exception = assertFailsWith<IllegalStateException> {
+            ProcessDaemonLauncher(
+                environment = mapOf(
+                    "MOPS_DAEMON_HOME" to daemonHome.pathString,
+                    "MOPS_DAEMON_CLASSPATH" to System.getProperty("java.class.path"),
+                    "MOPS_FAKE_DAEMON_STARTUP_ERROR" to "1",
+                ),
+            ).ping(project, mpsHome, null)
+        }
+
+        assertContains(exception.message ?: "", "JVM_VERSION_MISMATCH")
+        assertContains(exception.message ?: "", "required Java 21")
+        assertContains(exception.message ?: "", "Daemon log:")
     }
 
     private fun assertProcessStops(pid: Long) {
@@ -534,16 +618,23 @@ class DaemonPingCommandTest {
         ProcessHandle.of(pid).ifPresent { it.destroyForcibly() }
         throw AssertionError("daemon process $pid was still alive after failed startup")
     }
+
+    private fun currentJavaExecutable(): Path =
+        Path.of(System.getProperty("java.home"))
+            .resolve("bin")
+            .resolve(if (System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java")
 }
 
 private class RecordingLauncher : DaemonProcessLauncher {
     var projectPath: Path? = null
     var mpsHome: Path? = null
+    var javaHome: Path? = null
     var modelTarget: Path? = null
 
-    override fun ping(projectPath: Path, mpsHome: Path): PingResponse {
+    override fun ping(projectPath: Path, mpsHome: Path, javaHome: Path?): PingResponse {
         this.projectPath = projectPath
         this.mpsHome = mpsHome
+        this.javaHome = javaHome
         return PingResponse(
             type = "ping",
             status = "ok",
@@ -554,9 +645,10 @@ private class RecordingLauncher : DaemonProcessLauncher {
         )
     }
 
-    override fun resave(projectPath: Path, mpsHome: Path, modelTarget: Path): ModelResaveResponse {
+    override fun resave(projectPath: Path, mpsHome: Path, javaHome: Path?, modelTarget: Path): ModelResaveResponse {
         this.projectPath = projectPath
         this.mpsHome = mpsHome
+        this.javaHome = javaHome
         this.modelTarget = modelTarget
         return ModelResaveResponse(
             type = "model-resave",

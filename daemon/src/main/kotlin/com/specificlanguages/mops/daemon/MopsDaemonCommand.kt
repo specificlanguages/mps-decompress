@@ -1,16 +1,21 @@
 package com.specificlanguages.mops.daemon
 
 import com.specificlanguages.mops.protocol.DaemonRecord
+import com.specificlanguages.mops.protocol.DaemonErrorResponse
 import com.specificlanguages.mops.protocol.GsonCodec
+import com.specificlanguages.mops.protocol.ProtocolVersion
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.time.Duration
 import java.time.Instant
+import java.util.concurrent.Callable
 import kotlin.io.path.createDirectories
 import kotlin.io.path.pathString
 import picocli.CommandLine.Command
+import picocli.CommandLine.Model.CommandSpec
 import picocli.CommandLine.Option
+import picocli.CommandLine.Spec
 
 @Command(
     name = "mops-daemon",
@@ -18,9 +23,17 @@ import picocli.CommandLine.Option
     version = ["mops-daemon 0.3.0-SNAPSHOT"],
     description = ["Serve loopback daemon requests until stopped or idle."],
 )
-class MopsDaemonCommand : Runnable {
+class MopsDaemonCommand(
+    private val jvmCompatibility: (Path) -> MpsJvmCompatibility.Failure? = MpsJvmCompatibility::checkCurrentJvm,
+) : Callable<Int> {
+    @Spec
+    lateinit var spec: CommandSpec
+
     @Option(names = ["--project-path"], required = true)
     lateinit var projectPath: String
+
+    @Option(names = ["--mps-home"], required = true)
+    lateinit var mpsHome: String
 
     @Option(names = ["--token"], required = true)
     lateinit var token: String
@@ -40,13 +53,20 @@ class MopsDaemonCommand : Runnable {
     @Option(names = ["--idle-timeout-ms"])
     var idleTimeoutMillis: Long = Duration.ofMinutes(3).toMillis()
 
-    override fun run() {
+    override fun call(): Int {
+        val mpsHomePath = Path.of(mpsHome)
+        val logPath = Path.of(logPath)
+        val jvmFailure = jvmCompatibility(mpsHomePath)
+        if (jvmFailure != null) {
+            writeStartupError(jvmFailure, logPath)
+            return 1
+        }
         val runtime = MpsRuntimeBootstrap(
             projectPath = Path.of(projectPath),
-            mpsHome = resolveMpsHomeFromRuntime(),
+            mpsHome = mpsHomePath,
             ideaConfigDir = Path.of(ideaConfigDir),
             ideaSystemDir = Path.of(ideaSystemDir),
-            logPath = Path.of(logPath),
+            logPath = logPath,
         )
         try {
             runtime.withLoadedProject { environment ->
@@ -69,14 +89,39 @@ class MopsDaemonCommand : Runnable {
                             startupTime = Instant.now().toString(),
                         ),
                     )
-                    println(GsonCodec.toJson(ready))
-                    System.out.flush()
+                    spec.commandLine().out.println(GsonCodec.toJson(ready))
+                    spec.commandLine().out.flush()
                 }
             }
         } catch (exception: RuntimeException) {
             runtime.log("startup failed: ${exception.message}")
             throw exception
         }
+        return 0
+    }
+
+    private fun writeStartupError(failure: MpsJvmCompatibility.Failure, logPath: Path) {
+        logPath.parent.createDirectories()
+        val message = "startup failed: ${failure.message}"
+        Files.writeString(
+            logPath,
+            "${Instant.now()} $message\n",
+            java.nio.file.StandardOpenOption.CREATE,
+            java.nio.file.StandardOpenOption.APPEND,
+        )
+        spec.commandLine().out.println(
+            GsonCodec.toJson(
+                DaemonErrorResponse(
+                    type = "error",
+                    status = "error",
+                    protocolVersion = ProtocolVersion,
+                    errorCode = failure.code,
+                    message = failure.message,
+                    logPath = logPath.pathString,
+                ),
+            ),
+        )
+        spec.commandLine().out.flush()
     }
 
     private fun writeRecord(path: Path, record: DaemonRecord) {
