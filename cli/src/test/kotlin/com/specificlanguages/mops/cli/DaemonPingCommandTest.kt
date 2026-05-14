@@ -269,10 +269,11 @@ class DaemonPingCommandTest {
         }.execute("daemon", "status")
 
         assertEquals(0, exitCode)
-        assertContains(stdout.toString(), "running")
-        assertContains(stdout.toString(), project.pathString)
-        assertContains(stdout.toString(), "4321")
-        assertContains(stdout.toString(), "/opt/mps")
+        val output = stdout.toString()
+        assertContains(output, "running")
+        assertContains(output, project.pathString)
+        assertContains(output, "4321")
+        assertContains(output, "/opt/mps")
     }
 
     @Test
