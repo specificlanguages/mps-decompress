@@ -33,9 +33,9 @@ class DaemonServerTest {
 
     @Test
     fun `successful ping returns project and mps home`() {
-        val response = exchange(
-            request = PingRequest(type = "ping", protocolVersion = 1, token = "secret"),
-        )
+        val response = persistentServer().handle(
+            gson.toJson(PingRequest(type = "ping", protocolVersion = 1, token = "secret")),
+        ) as PingResponse
 
         assertEquals("ok", response.status)
         assertEquals(1, response.protocolVersion)
@@ -47,9 +47,9 @@ class DaemonServerTest {
 
     @Test
     fun `token mismatch returns structured error`() {
-        val response = exchange(
-            request = PingRequest(type = "ping", protocolVersion = 1, token = "wrong"),
-        )
+        val response = persistentServer().handle(
+            gson.toJson(PingRequest(type = "ping", protocolVersion = 1, token = "wrong")),
+        ) as DaemonErrorResponse
 
         assertEquals("error", response.status)
         assertEquals("TOKEN_MISMATCH", response.errorCode)
@@ -57,9 +57,9 @@ class DaemonServerTest {
 
     @Test
     fun `protocol mismatch returns structured error`() {
-        val response = exchange(
-            request = PingRequest(type = "ping", protocolVersion = 999, token = "secret"),
-        )
+        val response = persistentServer().handle(
+            gson.toJson(PingRequest(type = "ping", protocolVersion = 999, token = "secret")),
+        ) as DaemonErrorResponse
 
         assertEquals("error", response.status)
         assertEquals("PROTOCOL_MISMATCH", response.errorCode)
@@ -211,41 +211,6 @@ class DaemonServerTest {
 
         assertEquals(listOf("com.example.plugin"), plugins.map { it.id })
         assertEquals(pluginsRoot.resolve("mps-example").toAbsolutePath().normalize(), plugins.single().path)
-    }
-
-    private fun exchange(request: PingRequest): PingResponse {
-        val latch = CountDownLatch(1)
-        lateinit var ready: ReadyMessage
-        val server = SingleUsePingServer(
-            environment = MpsEnvironmentState(
-                projectPath = Path.of("/project"),
-                mpsHome = Path.of("/mps"),
-                ideaConfigDir = Path.of("/state/config"),
-                ideaSystemDir = Path.of("/state/system"),
-                logPath = Path.of("/state/daemon.log"),
-            ),
-            expectedToken = "secret",
-        )
-        val thread = Thread {
-            server.serveOnce {
-                ready = it
-                latch.countDown()
-            }
-        }
-        thread.start()
-
-        assertTrue(latch.await(5, TimeUnit.SECONDS), "server did not bind a socket")
-        val response = Socket(InetAddress.getLoopbackAddress(), ready.port).use { socket ->
-            PrintWriter(socket.getOutputStream(), true).use { writer ->
-                BufferedReader(InputStreamReader(socket.getInputStream())).use { reader ->
-                    writer.println(gson.toJson(request))
-                    gson.fromJson(reader.readLine(), PingResponse::class.java)
-                }
-            }
-        }
-        thread.join(5_000)
-        assertTrue(!thread.isAlive, "server did not exit after one request")
-        return response
     }
 
     private fun exchange(port: Int, request: Any): PingResponse =

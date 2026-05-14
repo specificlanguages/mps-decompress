@@ -9,7 +9,6 @@ import picocli.CommandLine.Command
     version = ["mops-daemon 0.3.0-SNAPSHOT"],
     description = ["Daemon process skeleton for MPS-backed mops operations."],
     subcommands = [
-        SingleUsePingCommand::class,
         ServeCommand::class,
     ],
 )
