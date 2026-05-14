@@ -85,8 +85,6 @@ class ProcessDaemonLauncher(
                     launch.ideaSystemDir.pathString,
                     "--log-path",
                     launch.logPath.pathString,
-                    "--record-path",
-                    launch.recordPath.pathString,
                 ),
         )
             .directory(launch.workDir.toFile())

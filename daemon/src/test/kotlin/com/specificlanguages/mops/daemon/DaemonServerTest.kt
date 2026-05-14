@@ -208,8 +208,6 @@ class DaemonServerTest {
             tempDir.resolve("state/system").pathString,
             "--log-path",
             logPath.pathString,
-            "--record-path",
-            tempDir.resolve("state/daemon.json").pathString,
         )
 
         val error = gson.fromJson(stdout.toString().trim(), DaemonErrorResponse::class.java)

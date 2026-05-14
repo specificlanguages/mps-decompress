@@ -15,7 +15,6 @@ data class DaemonLaunch(
     val ideaConfigDir: Path,
     val ideaSystemDir: Path,
     val logPath: Path,
-    val recordPath: Path,
     val jvmArgs: List<String>,
 ) {
     companion object {
@@ -33,7 +32,6 @@ data class DaemonLaunch(
             ideaConfigDir.createDirectories()
             ideaSystemDir.createDirectories()
             val logPath = logDir.resolve("daemon.log")
-            val recordPath = DaemonRecordStore(environment).recordPath(normalizedProject)
 
             return DaemonLaunch(
                 projectPath = normalizedProject,
@@ -43,7 +41,6 @@ data class DaemonLaunch(
                 ideaConfigDir = ideaConfigDir,
                 ideaSystemDir = ideaSystemDir,
                 logPath = logPath,
-                recordPath = recordPath,
                 jvmArgs = MpsJvmArgs.forMpsHome(normalizedMpsHome, ideaConfigDir, ideaSystemDir),
             )
         }

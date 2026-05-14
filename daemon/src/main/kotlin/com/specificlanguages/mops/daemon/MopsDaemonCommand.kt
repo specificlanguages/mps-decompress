@@ -1,21 +1,15 @@
 package com.specificlanguages.mops.daemon
 
-import com.specificlanguages.mops.protocol.DaemonRecord
-import com.specificlanguages.mops.protocol.DaemonErrorResponse
-import com.specificlanguages.mops.protocol.GsonCodec
-import com.specificlanguages.mops.protocol.ProtocolVersion
+import com.specificlanguages.mops.protocol.*
+import picocli.CommandLine.*
+import picocli.CommandLine.Model.CommandSpec
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.Callable
 import kotlin.io.path.createDirectories
 import kotlin.io.path.pathString
-import picocli.CommandLine.Command
-import picocli.CommandLine.Model.CommandSpec
-import picocli.CommandLine.Option
-import picocli.CommandLine.Spec
 
 @Command(
     name = "mops-daemon",
@@ -47,9 +41,6 @@ class MopsDaemonCommand(
     @Option(names = ["--log-path"], required = true)
     lateinit var logPath: String
 
-    @Option(names = ["--record-path"], required = true)
-    lateinit var recordPath: String
-
     @Option(names = ["--idle-timeout-ms"])
     var idleTimeoutMillis: Long = Duration.ofMinutes(3).toMillis()
 
@@ -75,8 +66,7 @@ class MopsDaemonCommand(
                     expectedToken = token,
                     idleTimeout = Duration.ofMillis(idleTimeoutMillis),
                 ).serve { ready ->
-                    writeRecord(
-                        path = Path.of(recordPath),
+                    DaemonRecordStore().write(
                         record = DaemonRecord(
                             port = ready.port,
                             token = token,
@@ -122,17 +112,5 @@ class MopsDaemonCommand(
             ),
         )
         spec.commandLine().out.flush()
-    }
-
-    private fun writeRecord(path: Path, record: DaemonRecord) {
-        path.parent.createDirectories()
-        val temporary = path.resolveSibling("${path.fileName}.tmp")
-        Files.writeString(temporary, GsonCodec.toJson(record))
-        Files.move(
-            temporary,
-            path,
-            StandardCopyOption.ATOMIC_MOVE,
-            StandardCopyOption.REPLACE_EXISTING,
-        )
     }
 }
