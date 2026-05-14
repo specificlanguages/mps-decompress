@@ -1,4 +1,4 @@
-package com.specificlanguages.mops.cli
+package com.specificlanguages.mops.protocol
 
 data class DaemonRecord(
     val port: Int,

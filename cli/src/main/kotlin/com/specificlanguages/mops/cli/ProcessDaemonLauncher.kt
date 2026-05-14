@@ -1,8 +1,9 @@
 package com.specificlanguages.mops.cli
 
+import com.specificlanguages.mops.protocol.DaemonControlRequest
+import com.specificlanguages.mops.protocol.DaemonRecord
 import com.specificlanguages.mops.protocol.DaemonResponse
 import com.specificlanguages.mops.protocol.GsonCodec
-import com.specificlanguages.mops.protocol.PingRequest
 import com.specificlanguages.mops.protocol.PingResponse
 import com.specificlanguages.mops.protocol.ProtocolVersion
 import com.specificlanguages.mops.protocol.ReadyMessage
@@ -71,7 +72,6 @@ class ProcessDaemonLauncher(
                     "-cp",
                     runtimeClasspath,
                     "com.specificlanguages.mops.daemon.MainKt",
-                    "serve",
                     "--project-path",
                     launch.projectPath.pathString,
                     "--token",
@@ -104,7 +104,7 @@ class ProcessDaemonLauncher(
                     BufferedReader(InputStreamReader(socket.getInputStream())).use { reader ->
                         writer.println(
                             GsonCodec.toJson(
-                                PingRequest(
+                                DaemonControlRequest(
                                     type = "ping",
                                     protocolVersion = ProtocolVersion,
                                     token = token,

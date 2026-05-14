@@ -1,5 +1,6 @@
 package com.specificlanguages.mops.cli
 
+import com.specificlanguages.mops.protocol.DaemonRecord
 import java.nio.file.Path
 import kotlin.io.path.absolute
 import picocli.CommandLine
@@ -39,7 +40,7 @@ class DaemonStopCommand : Runnable {
             return
         }
 
-        selected.forEach { record ->
+        selected.forEach { record: DaemonRecord ->
             try {
                 DaemonClient().stop(record)
                 records.delete(Path.of(record.projectPath))

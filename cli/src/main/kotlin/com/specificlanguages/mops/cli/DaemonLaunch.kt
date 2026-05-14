@@ -31,7 +31,7 @@ data class DaemonLaunch(
             workDir.createDirectories()
             ideaConfigDir.createDirectories()
             ideaSystemDir.createDirectories()
-            val logPath = logDir.resolve("daemon-ping.log")
+            val logPath = logDir.resolve("daemon.log")
             val recordPath = DaemonRecordStore(environment).recordPath(normalizedProject)
 
             return DaemonLaunch(

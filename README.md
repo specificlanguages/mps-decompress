@@ -15,8 +15,8 @@ mops daemon stop
 
 This checkout is the Kotlin daemon prototype. The old Go/offline command surface and the previous Live IDE bridge
 prototype were intentionally removed. MPS-backed work now goes through a per-project daemon process that the CLI starts
-or reuses for daemon-backed commands. `mops model resave` is the planned first real model operation and is still a
-skeleton command in this stage.
+or reuses for daemon-backed commands. `mops model resave` is the planned first real model operation; the command and
+protocol route are present, while the MPS API resave implementation is still pending.
 
 ## Commands
 
@@ -51,7 +51,7 @@ stable hashed subdirectory under `projects/`, including:
 
 - `daemon.json` - atomic daemon record with port, token, PID, protocol version, daemon version, project path, MPS home,
   log path, and startup time
-- `logs/daemon-ping.log` - daemon startup and runtime log for the current prototype
+- `logs/daemon.log` - daemon startup and runtime log for the current prototype
 - `daemon/idea-config` and `daemon/idea-system` - isolated IDEA directories passed to the daemon JVM
 
 Daemon commands use loopback socket IPC with a per-daemon token. Requests are serialized by the daemon. Stale daemon

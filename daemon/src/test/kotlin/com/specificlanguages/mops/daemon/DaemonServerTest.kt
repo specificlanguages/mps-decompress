@@ -4,7 +4,6 @@ import com.google.gson.Gson
 import com.specificlanguages.mops.protocol.DaemonControlRequest
 import com.specificlanguages.mops.protocol.DaemonControlResponse
 import com.specificlanguages.mops.protocol.DaemonErrorResponse
-import com.specificlanguages.mops.protocol.PingRequest
 import com.specificlanguages.mops.protocol.PingResponse
 import com.specificlanguages.mops.protocol.ReadyMessage
 import java.io.BufferedReader
@@ -34,7 +33,7 @@ class DaemonServerTest {
     @Test
     fun `successful ping returns project and mps home`() {
         val response = persistentServer().handle(
-            gson.toJson(PingRequest(type = "ping", protocolVersion = 1, token = "secret")),
+            gson.toJson(DaemonControlRequest(type = "ping", protocolVersion = 1, token = "secret")),
         ) as PingResponse
 
         assertEquals("ok", response.status)
@@ -48,7 +47,7 @@ class DaemonServerTest {
     @Test
     fun `token mismatch returns structured error`() {
         val response = persistentServer().handle(
-            gson.toJson(PingRequest(type = "ping", protocolVersion = 1, token = "wrong")),
+            gson.toJson(DaemonControlRequest(type = "ping", protocolVersion = 1, token = "wrong")),
         ) as DaemonErrorResponse
 
         assertEquals("error", response.status)
@@ -58,7 +57,7 @@ class DaemonServerTest {
     @Test
     fun `protocol mismatch returns structured error`() {
         val response = persistentServer().handle(
-            gson.toJson(PingRequest(type = "ping", protocolVersion = 999, token = "secret")),
+            gson.toJson(DaemonControlRequest(type = "ping", protocolVersion = 999, token = "secret")),
         ) as DaemonErrorResponse
 
         assertEquals("error", response.status)
@@ -165,8 +164,8 @@ class DaemonServerTest {
         thread.start()
 
         assertTrue(latch.await(5, TimeUnit.SECONDS), "server did not bind a socket")
-        assertEquals("ok", exchange(ready.port, PingRequest(type = "ping", protocolVersion = 1, token = "secret")).status)
-        assertEquals("ok", exchange(ready.port, PingRequest(type = "ping", protocolVersion = 1, token = "secret")).status)
+        assertEquals("ok", exchange(ready.port, DaemonControlRequest(type = "ping", protocolVersion = 1, token = "secret")).status)
+        assertEquals("ok", exchange(ready.port, DaemonControlRequest(type = "ping", protocolVersion = 1, token = "secret")).status)
         assertEquals("ok", exchangeControl(ready.port, DaemonControlRequest(type = "stop", protocolVersion = 1, token = "secret")).status)
         thread.join(5_000)
 

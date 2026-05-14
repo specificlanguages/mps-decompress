@@ -1,5 +1,6 @@
 package com.specificlanguages.mops.cli
 
+import com.specificlanguages.mops.protocol.DaemonRecord
 import kotlin.io.path.absolute
 import picocli.CommandLine
 import picocli.CommandLine.Command
@@ -38,7 +39,7 @@ class DaemonStatusCommand : Runnable {
             return
         }
 
-        selected.forEach { record ->
+        selected.forEach { record: DaemonRecord ->
             spec.commandLine().out.println(
                 "running project=${record.projectPath} port=${record.port} pid=${record.pid} mpsHome=${record.mpsHome} log=${record.logPath}",
             )
