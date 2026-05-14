@@ -1,6 +1,7 @@
 package com.specificlanguages.mops.cli
 
 import com.specificlanguages.mops.protocol.DaemonRecord
+import com.specificlanguages.mops.protocol.DaemonRecordStore
 import com.specificlanguages.mops.protocol.ModelResaveResponse
 import com.specificlanguages.mops.protocol.PingResponse
 import java.io.ByteArrayOutputStream

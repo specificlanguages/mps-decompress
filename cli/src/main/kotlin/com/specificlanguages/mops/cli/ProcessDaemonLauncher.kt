@@ -2,6 +2,7 @@ package com.specificlanguages.mops.cli
 
 import com.specificlanguages.mops.protocol.DaemonControlRequest
 import com.specificlanguages.mops.protocol.DaemonRecord
+import com.specificlanguages.mops.protocol.DaemonRecordStore
 import com.specificlanguages.mops.protocol.DaemonResponse
 import com.specificlanguages.mops.protocol.GsonCodec
 import com.specificlanguages.mops.protocol.PingResponse

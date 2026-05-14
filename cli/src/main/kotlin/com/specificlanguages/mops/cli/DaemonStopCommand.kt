@@ -1,6 +1,7 @@
 package com.specificlanguages.mops.cli
 
 import com.specificlanguages.mops.protocol.DaemonRecord
+import com.specificlanguages.mops.protocol.DaemonRecordStore
 import java.nio.file.Path
 import kotlin.io.path.absolute
 import picocli.CommandLine

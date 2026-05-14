@@ -1,7 +1,5 @@
-package com.specificlanguages.mops.cli
+package com.specificlanguages.mops.protocol
 
-import com.specificlanguages.mops.protocol.DaemonRecord
-import com.specificlanguages.mops.protocol.GsonCodec
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption

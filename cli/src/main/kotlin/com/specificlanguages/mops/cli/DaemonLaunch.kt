@@ -1,5 +1,6 @@
 package com.specificlanguages.mops.cli
 
+import com.specificlanguages.mops.protocol.DaemonRecordStore
 import java.nio.file.Path
 import java.security.MessageDigest
 import kotlin.io.path.absolute
