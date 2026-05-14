@@ -63,11 +63,16 @@ class ModelResaveDaemonTest {
             ),
         )
 
-        val error = response as DaemonErrorResponse
-        assertEquals("model-resave", error.type)
-        assertEquals("error", error.status)
-        assertEquals("NOT_IMPLEMENTED", error.errorCode)
-        assertEquals("/state/daemon.log", error.logPath)
+        assertEquals(
+            DaemonErrorResponse(
+                type = "model-resave",
+                protocolVersion = 1,
+                errorCode = "NOT_IMPLEMENTED",
+                message = "model resave is routed through the MPS daemon, but the MPS API resave implementation is not wired yet",
+                logPath = "/state/daemon.log",
+            ),
+            response,
+        )
     }
 
     @Test
@@ -84,11 +89,16 @@ class ModelResaveDaemonTest {
             ),
         )
 
-        val error = response as DaemonErrorResponse
-        assertEquals("model-resave", error.type)
-        assertEquals("INVALID_REQUEST", error.errorCode)
-        assertEquals("modelTarget is required", error.message)
-        assertEquals("/state/daemon.log", error.logPath)
+        assertEquals(
+            DaemonErrorResponse(
+                type = "model-resave",
+                protocolVersion = 1,
+                errorCode = "INVALID_REQUEST",
+                message = "modelTarget is required",
+                logPath = "/state/daemon.log",
+            ),
+            response,
+        )
     }
 
     private fun persistentServer(): PersistentDaemonServer =

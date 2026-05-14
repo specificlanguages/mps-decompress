@@ -37,34 +37,56 @@ class DaemonServerTest {
     fun `successful ping returns project and mps home`() {
         val response = persistentServer().handle(
             gson.toJson(DaemonControlRequest(type = "ping", protocolVersion = 1, token = "secret")),
-        ) as PingResponse
+        )
 
-        assertEquals("ok", response.status)
-        assertEquals(1, response.protocolVersion)
-        assertEquals("/project", response.projectPath)
-        assertEquals("/mps", response.mpsHome)
-        assertEquals(true, response.environmentReady)
-        assertEquals("/state/daemon.log", response.logPath)
+        assertEquals(
+            PingResponse(
+                type = "ping",
+                status = "ok",
+                protocolVersion = 1,
+                projectPath = "/project",
+                mpsHome = "/mps",
+                environmentReady = true,
+                logPath = "/state/daemon.log",
+                ideaConfigPath = "/state/config",
+                ideaSystemPath = "/state/system",
+            ),
+            response,
+        )
     }
 
     @Test
     fun `token mismatch returns structured error`() {
         val response = persistentServer().handle(
             gson.toJson(DaemonControlRequest(type = "ping", protocolVersion = 1, token = "wrong")),
-        ) as DaemonErrorResponse
+        )
 
-        assertEquals("error", response.status)
-        assertEquals("TOKEN_MISMATCH", response.errorCode)
+        assertEquals(
+            DaemonErrorResponse(
+                type = "ping",
+                protocolVersion = 1,
+                errorCode = "TOKEN_MISMATCH",
+                message = "invalid daemon token",
+            ),
+            response,
+        )
     }
 
     @Test
     fun `protocol mismatch returns structured error`() {
         val response = persistentServer().handle(
             gson.toJson(DaemonControlRequest(type = "ping", protocolVersion = 999, token = "secret")),
-        ) as DaemonErrorResponse
+        )
 
-        assertEquals("error", response.status)
-        assertEquals("PROTOCOL_MISMATCH", response.errorCode)
+        assertEquals(
+            DaemonErrorResponse(
+                type = "ping",
+                protocolVersion = 1,
+                errorCode = "PROTOCOL_MISMATCH",
+                message = "unsupported protocol version 999",
+            ),
+            response,
+        )
     }
 
     @Test
@@ -114,11 +136,21 @@ class DaemonServerTest {
             assertEquals(project, environment.projectPath)
         }
 
-        val config = opener.config ?: error("project session was not opened")
-        assertEquals(project, config.projectPath)
-        assertEquals(mpsHome.resolve("plugins"), config.pluginRoot)
-        assertEquals("2024.1", config.buildNumber)
-        assertEquals(listOf("com.example.plugin"), config.plugins.map { it.id })
+        assertEquals(
+            MpsProjectSessionConfig(
+                projectPath = project,
+                mpsHome = mpsHome,
+                pluginRoot = mpsHome.resolve("plugins"),
+                plugins = listOf(
+                    DetectedPlugin(
+                        id = "com.example.plugin",
+                        path = mpsHome.resolve("plugins/mps-example").toAbsolutePath().normalize(),
+                    ),
+                ),
+                buildNumber = "2024.1",
+            ),
+            opener.config,
+        )
     }
 
     @Test
@@ -226,11 +258,15 @@ class DaemonServerTest {
 
         val response = server.handle("{}")
 
-        val error = response as DaemonErrorResponse
-        assertEquals("error", error.type)
-        assertEquals("error", error.status)
-        assertEquals("INVALID_REQUEST", error.errorCode)
-        assertEquals("request type is required", error.message)
+        assertEquals(
+            DaemonErrorResponse(
+                type = "error",
+                protocolVersion = 1,
+                errorCode = "INVALID_REQUEST",
+                message = "request type is required",
+            ),
+            response,
+        )
     }
 
     @Test
@@ -239,10 +275,15 @@ class DaemonServerTest {
 
         val response = server.handle("""{"type":null,"protocolVersion":1,"token":"secret"}""")
 
-        val error = response as DaemonErrorResponse
-        assertEquals("error", error.type)
-        assertEquals("error", error.status)
-        assertEquals("INVALID_REQUEST", error.errorCode)
+        assertEquals(
+            DaemonErrorResponse(
+                type = "error",
+                protocolVersion = 1,
+                errorCode = "INVALID_REQUEST",
+                message = "request type is required",
+            ),
+            response,
+        )
     }
 
     @Test
@@ -256,8 +297,15 @@ class DaemonServerTest {
 
         val plugins = PluginScanner.findPlugins(pluginsRoot)
 
-        assertEquals(listOf("com.example.plugin"), plugins.map { it.id })
-        assertEquals(pluginsRoot.resolve("mps-example").toAbsolutePath().normalize(), plugins.single().path)
+        assertEquals(
+            listOf(
+                DetectedPlugin(
+                    id = "com.example.plugin",
+                    path = pluginsRoot.resolve("mps-example").toAbsolutePath().normalize(),
+                ),
+            ),
+            plugins,
+        )
     }
 
     private fun exchange(port: Int, request: Any): PingResponse =
