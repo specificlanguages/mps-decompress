@@ -187,7 +187,6 @@ class DaemonPingCommandTest {
         assertTrue(!launch.ideaConfigDir.pathString.startsWith(project.pathString))
         assertTrue(launch.ideaConfigDir.exists())
         assertTrue(launch.ideaSystemDir.exists())
-        assertContains(launch.jvmArgs, "-Dmops.mps.home=${mpsHome.pathString}")
         assertContains(launch.jvmArgs, "-Didea.config.path=${launch.ideaConfigDir.pathString}")
         assertContains(launch.jvmArgs, "-Didea.system.path=${launch.ideaSystemDir.pathString}")
         assertContains(launch.jvmArgs, "-Djna.boot.library.path=${mpsHome.resolve("lib/jna").pathString}")

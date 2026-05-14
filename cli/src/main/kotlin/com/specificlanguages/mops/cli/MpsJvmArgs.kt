@@ -1,6 +1,5 @@
 package com.specificlanguages.mops.cli
 
-import com.specificlanguages.mops.protocol.MpsHomeProperty
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Properties
@@ -11,7 +10,6 @@ object MpsJvmArgs {
         val mpsVersion = mpsVersion(mpsHome)
         return buildList {
             add("-Didea.max.intellisense.filesize=100000")
-            add("-D$MpsHomeProperty=${mpsHome.pathString}")
             add("-Didea.config.path=${ideaConfigDir.pathString}")
             add("-Didea.system.path=${ideaSystemDir.pathString}")
             if (mpsVersion != null && mpsVersion >= "2025.2") {
@@ -24,16 +22,6 @@ object MpsJvmArgs {
                 add("-Djna.boot.library.path=${jnaPath(mpsHome).pathString}")
             }
             addAll(mpsAddOpens())
-        }
-    }
-
-    fun requiredJavaMajor(mpsHome: Path): Int {
-        val version = mpsVersion(mpsHome)
-        return when {
-            version == null -> Runtime.version().feature()
-            version >= "2025" -> 21
-            version >= "2022" -> 17
-            else -> 11
         }
     }
 
