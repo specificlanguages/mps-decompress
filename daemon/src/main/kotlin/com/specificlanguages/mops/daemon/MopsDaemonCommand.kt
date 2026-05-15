@@ -60,12 +60,13 @@ class MopsDaemonCommand(
             logPath = logPath,
         )
         try {
-            runtime.withLoadedProject { environment ->
+            runtime.withLoadedProject { session ->
                 PersistentDaemonServer(
-                    environment = environment,
+                    session = session,
                     expectedToken = token,
                     idleTimeout = Duration.ofMillis(idleTimeoutMillis),
                 ).serve { ready ->
+                    val environment = session.environment
                     DaemonRecordStore().write(
                         record = DaemonRecord(
                             port = ready.port,

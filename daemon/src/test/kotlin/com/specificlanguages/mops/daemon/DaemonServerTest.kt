@@ -24,6 +24,7 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
+import org.jetbrains.mps.openapi.project.Project
 import org.junit.jupiter.api.io.TempDir
 import picocli.CommandLine
 
@@ -132,8 +133,9 @@ class DaemonServerTest {
             projectSessionOpener = opener,
         )
 
-        bootstrap.withLoadedProject { environment ->
-            assertEquals(project, environment.projectPath)
+        bootstrap.withLoadedProject { session ->
+            assertEquals(project, session.environment.projectPath)
+            assertEquals(FakeMpsProject, session.project)
         }
 
         assertEquals(
@@ -224,13 +226,7 @@ class DaemonServerTest {
         val latch = CountDownLatch(1)
         lateinit var ready: ReadyMessage
         val server = PersistentDaemonServer(
-            environment = MpsEnvironmentState(
-                projectPath = Path.of("/project"),
-                mpsHome = Path.of("/mps"),
-                ideaConfigDir = Path.of("/state/config"),
-                ideaSystemDir = Path.of("/state/system"),
-                logPath = Path.of("/state/daemon.log"),
-            ),
+            session = testMpsProjectSession(),
             expectedToken = "secret",
         )
         val thread = Thread {
@@ -328,13 +324,7 @@ class DaemonServerTest {
 
     private fun persistentServer(): PersistentDaemonServer =
         PersistentDaemonServer(
-            environment = MpsEnvironmentState(
-                projectPath = Path.of("/project"),
-                mpsHome = Path.of("/mps"),
-                ideaConfigDir = Path.of("/state/config"),
-                ideaSystemDir = Path.of("/state/system"),
-                logPath = Path.of("/state/daemon.log"),
-            ),
+            session = testMpsProjectSession(),
             expectedToken = "secret",
         )
 }
@@ -342,8 +332,8 @@ class DaemonServerTest {
 private class RecordingProjectSessionOpener : MpsProjectSessionOpener {
     var config: MpsProjectSessionConfig? = null
 
-    override fun <T> withOpenProject(config: MpsProjectSessionConfig, action: () -> T): T {
+    override fun <T> withOpenProject(config: MpsProjectSessionConfig, action: (Project) -> T): T {
         this.config = config
-        return action()
+        return action(FakeMpsProject)
     }
 }

@@ -105,25 +105,13 @@ class ModelResaveDaemonTest {
 
     private fun persistentServer(): PersistentDaemonServer =
         PersistentDaemonServer(
-            environment = MpsEnvironmentState(
-                projectPath = Path.of("/project"),
-                mpsHome = Path.of("/mps"),
-                ideaConfigDir = Path.of("/state/config"),
-                ideaSystemDir = Path.of("/state/system"),
-                logPath = Path.of("/state/daemon.log"),
-            ),
+            session = testMpsProjectSession(),
             expectedToken = "secret",
         )
 
     private fun persistentServer(projectPath: Path): PersistentDaemonServer =
         PersistentDaemonServer(
-            environment = MpsEnvironmentState(
-                projectPath = projectPath,
-                mpsHome = Path.of("/mps"),
-                ideaConfigDir = Path.of("/state/config"),
-                ideaSystemDir = Path.of("/state/system"),
-                logPath = Path.of("/state/daemon.log"),
-            ),
+            session = testMpsProjectSession(projectPath),
             expectedToken = "secret",
         )
 

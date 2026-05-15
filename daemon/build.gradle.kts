@@ -32,6 +32,9 @@ dependencies {
 
     testImplementation(kotlin("test"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
+    testRuntimeOnly(zipTree({ mpsZip.singleFile }).matching {
+        include("lib/mps-openapi.jar")
+    })
 }
 
 kotlin {

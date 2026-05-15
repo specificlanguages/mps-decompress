@@ -37,7 +37,7 @@ class MpsRuntimeBootstrap(
         )
     }
 
-    fun <T> withLoadedProject(action: (MpsEnvironmentState) -> T): T {
+    fun <T> withLoadedProject(action: (MpsProjectSession) -> T): T {
         val environment = initialize()
         val pluginRoot = mpsHome.resolve("plugins")
         val plugins = PluginScanner.findPlugins(pluginRoot)
@@ -50,9 +50,9 @@ class MpsRuntimeBootstrap(
                 plugins = plugins,
                 buildNumber = MpsBuildProperties.buildNumber(mpsHome),
             ),
-        ) {
+        ) { project ->
             log("environment ready for project ${projectPath.pathString}")
-            action(environment)
+            action(MpsProjectSession(environment, project))
         }
     }
 

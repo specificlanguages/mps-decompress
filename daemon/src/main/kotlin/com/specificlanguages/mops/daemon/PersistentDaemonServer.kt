@@ -19,11 +19,13 @@ import java.time.Duration
 import kotlin.io.path.pathString
 
 class PersistentDaemonServer(
-    private val environment: MpsEnvironmentState,
+    private val session: MpsProjectSession,
     private val expectedToken: String,
     private val protocolVersion: Int = ProtocolVersion,
     private val idleTimeout: Duration = Duration.ofMinutes(3),
 ) {
+    private val environment: MpsEnvironmentState = session.environment
+
     fun serve(onReady: (ReadyMessage) -> Unit = {}) {
         ServerSocket(0, 50, InetAddress.getLoopbackAddress()).use { server ->
             server.soTimeout = idleTimeout.toMillis().toInt()
