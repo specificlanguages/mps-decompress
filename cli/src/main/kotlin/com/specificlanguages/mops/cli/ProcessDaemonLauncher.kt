@@ -1,6 +1,5 @@
 package com.specificlanguages.mops.cli
 
-import com.specificlanguages.mops.protocol.DaemonControlRequest
 import com.specificlanguages.mops.protocol.DaemonRecord
 import com.specificlanguages.mops.protocol.DaemonRecordStore
 import com.specificlanguages.mops.protocol.DaemonResponse
@@ -11,9 +10,6 @@ import com.specificlanguages.mops.protocol.ReadyMessage
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
-import java.io.PrintWriter
-import java.net.InetAddress
-import java.net.Socket
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
@@ -103,22 +99,7 @@ class ProcessDaemonLauncher(
                 throw IllegalStateException("daemon did not report a compatible ready message")
             }
 
-            val response = Socket(InetAddress.getLoopbackAddress(), ready.port).use { socket ->
-                PrintWriter(socket.getOutputStream(), true).use { writer ->
-                    BufferedReader(InputStreamReader(socket.getInputStream())).use { reader ->
-                        writer.println(
-                            GsonCodec.toJson(
-                                DaemonControlRequest(
-                                    type = "ping",
-                                    protocolVersion = ProtocolVersion,
-                                    token = token,
-                                ),
-                            ),
-                        )
-                        GsonCodec.fromJson(reader.readLine(), PingResponse::class.java)
-                    }
-                }
-            }
+            val response = DaemonClient(timeout).ping(ready.port, token)
 
             if (response.status != "ok") {
                 throw IllegalStateException("daemon ping failed with status ${response.status}")

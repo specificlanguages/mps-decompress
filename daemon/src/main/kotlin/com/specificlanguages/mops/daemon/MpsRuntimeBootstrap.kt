@@ -1,9 +1,9 @@
 package com.specificlanguages.mops.daemon
 
+import com.specificlanguages.mops.protocol.MpsBuildProperties
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
-import java.util.Properties
 import kotlin.io.path.createDirectories
 import kotlin.io.path.pathString
 
@@ -48,7 +48,7 @@ class MpsRuntimeBootstrap(
                 mpsHome = mpsHome,
                 pluginRoot = pluginRoot,
                 plugins = plugins,
-                buildNumber = mpsBuildNumber(mpsHome),
+                buildNumber = MpsBuildProperties.buildNumber(mpsHome),
             ),
         ) {
             log("environment ready for project ${projectPath.pathString}")
@@ -78,8 +78,4 @@ class MpsRuntimeBootstrap(
         }
     }
 
-    private fun mpsBuildNumber(mpsHome: Path): String? =
-        Files.newInputStream(mpsHome.resolve("build.properties")).use { input ->
-            Properties().apply { load(input) }.getProperty("mps.build.number")
-        }
 }

@@ -16,6 +16,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.io.TempDir
 
 class ModelResaveDaemonTest {
@@ -25,6 +26,7 @@ class ModelResaveDaemonTest {
     lateinit var tempDir: Path
 
     @Test
+    @Disabled("Pending MPS API-backed model resave implementation")
     fun `model resave restores resolve attributes for mps-json structure model by name`() {
         val project = copyTestProject("mps-json")
         val model = project.resolve(

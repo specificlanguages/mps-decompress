@@ -1,37 +1,27 @@
 package com.specificlanguages.mops.cli
 
+import com.specificlanguages.mops.protocol.MpsBuildProperties
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.Properties
 import kotlin.io.path.pathString
 
 object MpsJvmArgs {
     fun forMpsHome(mpsHome: Path, ideaConfigDir: Path, ideaSystemDir: Path): List<String> {
-        val mpsVersion = mpsVersion(mpsHome)
+        val mpsVersion = MpsBuildProperties.version(mpsHome)
         return buildList {
             add("-Didea.max.intellisense.filesize=100000")
             add("-Didea.config.path=${ideaConfigDir.pathString}")
             add("-Didea.system.path=${ideaSystemDir.pathString}")
-            if (mpsVersion != null && mpsVersion >= "2025.2") {
+            if (mpsVersion != null && mpsVersion >= MpsBuildProperties.Version(2025, 2)) {
                 add("-Didea.platform.prefix=MPS")
             }
-            if (mpsVersion != null && mpsVersion >= "2023.3") {
+            if (mpsVersion != null && mpsVersion >= MpsBuildProperties.Version(2023, 3)) {
                 add("-Dintellij.platform.load.app.info.from.resources=true")
             }
-            if (mpsVersion != null && mpsVersion >= "2022.3") {
+            if (mpsVersion != null && mpsVersion >= MpsBuildProperties.Version(2022, 3)) {
                 add("-Djna.boot.library.path=${jnaPath(mpsHome).pathString}")
             }
             addAll(mpsAddOpens())
-        }
-    }
-
-    private fun mpsVersion(mpsHome: Path): String? {
-        val buildProperties = mpsHome.resolve("build.properties")
-        if (!Files.isRegularFile(buildProperties)) {
-            return null
-        }
-        return Files.newInputStream(buildProperties).use { input ->
-            Properties().apply { load(input) }.getProperty("mps.build.number")
         }
     }
 

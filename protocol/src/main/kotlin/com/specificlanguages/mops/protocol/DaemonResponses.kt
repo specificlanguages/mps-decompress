@@ -16,8 +16,6 @@ data class PingResponse(
     val logPath: String? = null,
     val ideaConfigPath: String? = null,
     val ideaSystemPath: String? = null,
-    val errorCode: String? = null,
-    val message: String? = null,
 ) : DaemonResponse
 
 data class DaemonControlResponse(

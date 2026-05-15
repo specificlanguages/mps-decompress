@@ -6,7 +6,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.absolute
 import kotlin.io.path.pathString
-import picocli.CommandLine
 import picocli.CommandLine.Command
 import picocli.CommandLine.Model.CommandSpec
 import picocli.CommandLine.Parameters
@@ -26,20 +25,17 @@ class ModelResaveCommand : Runnable {
 
     override fun run() {
         val root = model.root
-        val mpsHome = resolveMpsHome(root.mpsHome, root.environment)
-            ?: throw CommandLine.ParameterException(
-                spec.commandLine(),
-                "model resave requires MPS home; pass --mps-home <path> or set MOPS_MPS_HOME",
-            )
+        val mpsHome = requireMpsHome(root, spec.commandLine(), "model resave")
         val resolvedTarget = Path.of(modelTarget).absolute().normalize()
-        val projectPath = inferProjectPath(if (Files.isDirectory(resolvedTarget)) resolvedTarget else resolvedTarget.parent)
-            ?: throw CommandLine.ParameterException(
-                spec.commandLine(),
-                "cannot infer MPS project from model target: no .mps directory found from $resolvedTarget upward",
-            )
+        val projectSearchStart = if (Files.isDirectory(resolvedTarget)) resolvedTarget else resolvedTarget.parent ?: resolvedTarget
+        val projectPath = requireProjectPath(
+            commandLine = spec.commandLine(),
+            start = projectSearchStart,
+            displayPath = resolvedTarget,
+            messagePrefix = "cannot infer MPS project from model target",
+        )
 
-        val javaHome = root.javaHome?.takeIf { it.isNotBlank() }?.let { Path.of(it).absolute() }
-        val response = root.launcher.resave(projectPath, Path.of(mpsHome).absolute(), javaHome, resolvedTarget)
+        val response = root.launcher.resave(projectPath, mpsHome, resolveJavaHome(root), resolvedTarget)
         when (response) {
             is ModelResaveResponse -> spec.commandLine().out.println("resaved ${response.modelTarget}")
             is DaemonErrorResponse -> {

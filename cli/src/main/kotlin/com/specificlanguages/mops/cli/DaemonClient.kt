@@ -23,19 +23,22 @@ class DaemonClient(
     private val timeout: Duration = Duration.ofSeconds(5),
 ) {
     fun ping(record: DaemonRecord): PingResponse =
+        ping(record.port, record.token)
+
+    fun ping(port: Int, token: String): PingResponse =
         exchange(
-            record = record,
+            port = port,
             request = DaemonControlRequest(
                 type = "ping",
                 protocolVersion = ProtocolVersion,
-                token = record.token,
+                token = token,
             ),
             responseType = PingResponse::class.java,
         )
 
     fun stop(record: DaemonRecord): DaemonControlResponse =
         exchange(
-            record = record,
+            port = record.port,
             request = DaemonControlRequest(
                 type = "stop",
                 protocolVersion = ProtocolVersion,
@@ -45,42 +48,42 @@ class DaemonClient(
         )
 
     fun resave(record: DaemonRecord, modelTarget: Path): DaemonResponse =
-        Socket(InetAddress.getLoopbackAddress(), record.port).use { socket ->
-            socket.soTimeout = timeout.toMillis().toInt()
-            PrintWriter(socket.getOutputStream(), true).use { writer ->
-                BufferedReader(InputStreamReader(socket.getInputStream())).use { reader ->
-                    writer.println(
-                        GsonCodec.toJson(
-                            ModelResaveRequest(
-                                protocolVersion = ProtocolVersion,
-                                token = record.token,
-                                modelTarget = modelTarget.pathString,
-                            ),
-                        ),
-                    )
-                    val responseLine = reader.readLine() ?: throw IllegalStateException("daemon closed connection")
-                    val status = GsonCodec.fromJson(responseLine, DaemonControlResponse::class.java)
-                    if (status.status == "ok") {
-                        GsonCodec.fromJson(responseLine, ModelResaveResponse::class.java)
-                    } else {
-                        GsonCodec.fromJson(responseLine, DaemonErrorResponse::class.java)
-                    }
-                }
-            }
-        }
+        decodeModelResaveResponse(
+            exchangeLine(
+                port = record.port,
+                request = ModelResaveRequest(
+                    protocolVersion = ProtocolVersion,
+                    token = record.token,
+                    modelTarget = modelTarget.pathString,
+                ),
+            ),
+        )
 
-    private fun <T : Any> exchange(record: DaemonRecord, request: DaemonControlRequest, responseType: Class<T>): T =
-        Socket(InetAddress.getLoopbackAddress(), record.port).use { socket ->
+    private fun decodeModelResaveResponse(responseLine: String): DaemonResponse {
+        val status = GsonCodec.fromJson(responseLine, DaemonControlResponse::class.java)
+        return if (status.status == "ok") {
+            GsonCodec.fromJson(responseLine, ModelResaveResponse::class.java)
+        } else {
+            GsonCodec.fromJson(responseLine, DaemonErrorResponse::class.java)
+        }
+    }
+
+    private fun <T : Any> exchange(port: Int, request: DaemonControlRequest, responseType: Class<T>): T {
+        val responseLine = exchangeLine(port, request)
+        val status = GsonCodec.fromJson(responseLine, DaemonControlResponse::class.java)
+        if (status.status != "ok") {
+            throw IllegalStateException(status.message ?: "daemon returned ${status.status}")
+        }
+        return GsonCodec.fromJson(responseLine, responseType)
+    }
+
+    private fun exchangeLine(port: Int, request: Any): String =
+        Socket(InetAddress.getLoopbackAddress(), port).use { socket ->
             socket.soTimeout = timeout.toMillis().toInt()
             PrintWriter(socket.getOutputStream(), true).use { writer ->
                 BufferedReader(InputStreamReader(socket.getInputStream())).use { reader ->
                     writer.println(GsonCodec.toJson(request))
-                    val responseLine = reader.readLine() ?: throw IllegalStateException("daemon closed connection")
-                    val status = GsonCodec.fromJson(responseLine, DaemonControlResponse::class.java)
-                    if (status.status != "ok") {
-                        throw IllegalStateException(status.message ?: "daemon returned ${status.status}")
-                    }
-                    GsonCodec.fromJson(responseLine, responseType)
+                    reader.readLine() ?: throw IllegalStateException("daemon closed connection")
                 }
             }
         }

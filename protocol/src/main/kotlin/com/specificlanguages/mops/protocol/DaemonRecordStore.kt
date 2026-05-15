@@ -51,10 +51,12 @@ class DaemonRecordStore(
     }
 
     fun recordPath(projectPath: Path): Path =
+        projectStateDir(projectPath).resolve("daemon.json")
+
+    fun projectStateDir(projectPath: Path): Path =
         daemonBaseDir(environment)
             .resolve("projects")
             .resolve(projectKey(projectPath))
-            .resolve("daemon.json")
 
     companion object {
         fun daemonBaseDir(environment: Map<String, String>): Path =

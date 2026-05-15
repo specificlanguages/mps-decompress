@@ -3,8 +3,6 @@ package com.specificlanguages.mops.cli
 import com.specificlanguages.mops.protocol.DaemonRecord
 import com.specificlanguages.mops.protocol.DaemonRecordStore
 import java.nio.file.Path
-import kotlin.io.path.absolute
-import picocli.CommandLine
 import picocli.CommandLine.Command
 import picocli.CommandLine.Model.CommandSpec
 import picocli.CommandLine.Option
@@ -25,16 +23,7 @@ class DaemonStopCommand : Runnable {
     override fun run() {
         val root = daemon.root
         val records = DaemonRecordStore(root.environment)
-        val selected = if (all) {
-            records.readAll()
-        } else {
-            val projectPath = inferProjectPath(root.workingDirectory)
-                ?: throw CommandLine.ParameterException(
-                    spec.commandLine(),
-                    "cannot infer MPS project: no .mps directory found from ${root.workingDirectory.absolute()} upward",
-                )
-            listOfNotNull(records.read(projectPath))
-        }
+        val selected = selectDaemonRecords(all, root, spec.commandLine(), records)
 
         if (selected.isEmpty()) {
             spec.commandLine().out.println("no mops daemons")

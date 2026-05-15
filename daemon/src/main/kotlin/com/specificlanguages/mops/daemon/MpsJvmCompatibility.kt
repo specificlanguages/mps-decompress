@@ -1,8 +1,7 @@
 package com.specificlanguages.mops.daemon
 
-import java.nio.file.Files
+import com.specificlanguages.mops.protocol.MpsBuildProperties
 import java.nio.file.Path
-import java.util.Properties
 
 object MpsJvmCompatibility {
     data class Failure(
@@ -25,7 +24,7 @@ object MpsJvmCompatibility {
         check(mpsHome, currentRuntime())
 
     fun check(mpsHome: Path, runtime: JavaRuntime): Failure? {
-        val mpsBuildNumber = mpsBuildNumber(mpsHome) ?: return null
+        val mpsBuildNumber = MpsBuildProperties.buildNumber(mpsHome) ?: return null
         val requiredJavaMajor = requiredJavaMajor(mpsBuildNumber)
         if (runtime.major != requiredJavaMajor) {
             return Failure(
@@ -51,18 +50,8 @@ object MpsJvmCompatibility {
             vmName = System.getProperty("java.vm.name", ""),
         )
 
-    private fun mpsBuildNumber(mpsHome: Path): String? {
-        val buildProperties = mpsHome.resolve("build.properties")
-        if (!Files.isRegularFile(buildProperties)) {
-            return null
-        }
-        return Files.newInputStream(buildProperties).use { input ->
-            Properties().apply { load(input) }.getProperty("mps.build.number")
-        }
-    }
-
     private fun requiredJavaMajor(mpsBuildNumber: String): Int {
-        val mpsMajor = mpsBuildNumber.substringBefore('.').toIntOrNull()
+        val mpsMajor = MpsBuildProperties.version(mpsBuildNumber)?.major
             ?: return Runtime.version().feature()
         return when {
             mpsMajor >= 2025 -> 21

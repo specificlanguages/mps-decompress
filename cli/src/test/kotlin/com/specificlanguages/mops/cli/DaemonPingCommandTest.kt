@@ -32,8 +32,7 @@ class DaemonPingCommandTest {
 
     @Test
     fun `daemon ping uses explicit mps home and inferred project`() {
-        val project = tempDir.resolve("project").createDirectories()
-        project.resolve(".mps").createDirectory()
+        val project = mpsProject()
         val child = project.resolve("solutions/foo").createDirectories()
         val launcher = RecordingLauncher()
         val stdout = ByteArrayOutputStream()
@@ -56,8 +55,7 @@ class DaemonPingCommandTest {
 
     @Test
     fun `daemon ping uses MOPS_MPS_HOME fallback`() {
-        val project = tempDir.resolve("project").createDirectories()
-        project.resolve(".mps").createDirectory()
+        val project = mpsProject()
         val launcher = RecordingLauncher()
 
         val exitCode = newCommandLine(
@@ -72,8 +70,7 @@ class DaemonPingCommandTest {
 
     @Test
     fun `daemon ping passes explicit java home to daemon launcher`() {
-        val project = tempDir.resolve("project").createDirectories()
-        project.resolve(".mps").createDirectory()
+        val project = mpsProject()
         val launcher = RecordingLauncher()
 
         val exitCode = newCommandLine(
@@ -88,8 +85,7 @@ class DaemonPingCommandTest {
 
     @Test
     fun `daemon ping reports missing mps home`() {
-        val project = tempDir.resolve("project").createDirectories()
-        project.resolve(".mps").createDirectory()
+        val project = mpsProject()
         val stderr = ByteArrayOutputStream()
 
         val exitCode = newCommandLine(
@@ -123,8 +119,7 @@ class DaemonPingCommandTest {
 
     @Test
     fun `model resave routes target through daemon launcher`() {
-        val project = tempDir.resolve("project").createDirectories()
-        project.resolve(".mps").createDirectory()
+        val project = mpsProject()
         val model = project.resolve("solutions/foo/models/main.mps")
         model.parent.createDirectories()
         java.nio.file.Files.writeString(model, "<model />")
@@ -150,8 +145,7 @@ class DaemonPingCommandTest {
 
     @Test
     fun `model resave requires mps home`() {
-        val project = tempDir.resolve("project").createDirectories()
-        project.resolve(".mps").createDirectory()
+        val project = mpsProject()
         val model = project.resolve("models/main.mps")
         model.parent.createDirectories()
         val stderr = ByteArrayOutputStream()
@@ -192,8 +186,7 @@ class DaemonPingCommandTest {
 
     @Test
     fun `project inference walks upward to mps directory`() {
-        val project = tempDir.resolve("project").createDirectories()
-        project.resolve(".mps").createDirectory()
+        val project = mpsProject()
         val nested = project.resolve("a/b/c").createDirectories()
 
         assertEquals(project, inferProjectPath(nested))
@@ -202,8 +195,7 @@ class DaemonPingCommandTest {
 
     @Test
     fun `daemon launch uses user-level state outside project and MPS jvm settings`() {
-        val project = tempDir.resolve("project").createDirectories()
-        project.resolve(".mps").createDirectory()
+        val project = mpsProject()
         val mpsHome = tempDir.resolve("mps").createDirectories()
         java.nio.file.Files.writeString(mpsHome.resolve("build.properties"), "mps.build.number=2024.1\n")
         mpsHome.resolve("lib/jna").createDirectories()
@@ -212,7 +204,7 @@ class DaemonPingCommandTest {
         val launch = DaemonLaunch.prepare(
             projectPath = project,
             mpsHome = mpsHome,
-            environment = mapOf("MOPS_DAEMON_HOME" to daemonHome.pathString),
+            environment = daemonEnvironment(daemonHome),
         )
 
         assertTrue(launch.stateDir.pathString.startsWith(daemonHome.pathString))
@@ -227,14 +219,13 @@ class DaemonPingCommandTest {
 
     @Test
     fun `daemon launch still prepares a log path when mps home is invalid`() {
-        val project = tempDir.resolve("project").createDirectories()
-        project.resolve(".mps").createDirectory()
+        val project = mpsProject()
         val mpsHome = tempDir.resolve("mps").createDirectories()
 
         val launch = DaemonLaunch.prepare(
             projectPath = project,
             mpsHome = mpsHome,
-            environment = mapOf("MOPS_DAEMON_HOME" to tempDir.resolve("daemon-home").pathString),
+            environment = daemonEnvironment(tempDir.resolve("daemon-home")),
         )
 
         assertTrue(launch.logPath.parent.exists())
@@ -242,27 +233,38 @@ class DaemonPingCommandTest {
     }
 
     @Test
+    fun `mps jvm args compare build versions numerically`() {
+        val mpsHome = tempDir.resolve("mps").createDirectories()
+        java.nio.file.Files.writeString(mpsHome.resolve("build.properties"), "mps.build.number=2025.10\n")
+        mpsHome.resolve("lib/jna").createDirectories()
+
+        val args = MpsJvmArgs.forMpsHome(
+            mpsHome = mpsHome,
+            ideaConfigDir = tempDir.resolve("config"),
+            ideaSystemDir = tempDir.resolve("system"),
+        )
+
+        assertContains(args, "-Didea.platform.prefix=MPS")
+        assertContains(args, "-Dintellij.platform.load.app.info.from.resources=true")
+        assertContains(args, "-Djna.boot.library.path=${mpsHome.resolve("lib/jna").pathString}")
+    }
+
+    @Test
     fun `daemon status reads the current project daemon record without mps home`() {
-        val project = tempDir.resolve("project").createDirectories()
-        project.resolve(".mps").createDirectory()
+        val project = mpsProject()
         val daemonHome = tempDir.resolve("daemon-home")
-        val record = DaemonRecord(
+        val record = daemonRecord(
             port = 4321,
-            token = "secret",
-            pid = 1234,
-            protocolVersion = 1,
-            daemonVersion = "0.3.0-SNAPSHOT",
-            projectPath = project.pathString,
+            project = project,
             mpsHome = "/opt/mps",
             logPath = daemonHome.resolve("projects/example/logs/daemon.log").pathString,
-            startupTime = "2026-05-12T12:00:00Z",
         )
-        DaemonRecordStore(mapOf("MOPS_DAEMON_HOME" to daemonHome.pathString)).write(record)
+        DaemonRecordStore(daemonEnvironment(daemonHome)).write(record)
         val stdout = ByteArrayOutputStream()
 
         val exitCode = newCommandLine(
             launcher = RecordingLauncher(),
-            environment = mapOf("MOPS_DAEMON_HOME" to daemonHome.pathString),
+            environment = daemonEnvironment(daemonHome),
             workingDirectory = project,
         ).also {
             it.out = PrintWriter(stdout, true)
@@ -279,28 +281,23 @@ class DaemonPingCommandTest {
     @Test
     fun `daemon status all lists every daemon record without project inference`() {
         val daemonHome = tempDir.resolve("daemon-home")
-        val store = DaemonRecordStore(mapOf("MOPS_DAEMON_HOME" to daemonHome.pathString))
+        val store = DaemonRecordStore(daemonEnvironment(daemonHome))
         store.write(
-            DaemonRecord(
+            daemonRecord(
                 port = 1111,
                 token = "one",
                 pid = 1,
-                protocolVersion = 1,
-                daemonVersion = "0.3.0-SNAPSHOT",
-                projectPath = tempDir.resolve("one").pathString,
+                project = tempDir.resolve("one"),
                 mpsHome = "/mps/one",
                 logPath = "/logs/one.log",
-                startupTime = "2026-05-12T12:00:00Z",
             ),
         )
         store.write(
-            DaemonRecord(
+            daemonRecord(
                 port = 2222,
                 token = "two",
                 pid = 2,
-                protocolVersion = 1,
-                daemonVersion = "0.3.0-SNAPSHOT",
-                projectPath = tempDir.resolve("two").pathString,
+                project = tempDir.resolve("two"),
                 mpsHome = "/mps/two",
                 logPath = "/logs/two.log",
                 startupTime = "2026-05-12T12:01:00Z",
@@ -310,7 +307,7 @@ class DaemonPingCommandTest {
 
         val exitCode = newCommandLine(
             launcher = RecordingLauncher(),
-            environment = mapOf("MOPS_DAEMON_HOME" to daemonHome.pathString),
+            environment = daemonEnvironment(daemonHome),
             workingDirectory = tempDir,
         ).also {
             it.out = PrintWriter(stdout, true)
@@ -325,134 +322,88 @@ class DaemonPingCommandTest {
 
     @Test
     fun `daemon stop sends shutdown and removes the current project record`() {
-        val project = tempDir.resolve("project").createDirectories()
-        project.resolve(".mps").createDirectory()
+        val project = mpsProject()
         val daemonHome = tempDir.resolve("daemon-home")
-        val store = DaemonRecordStore(mapOf("MOPS_DAEMON_HOME" to daemonHome.pathString))
-        val serverReady = CountDownLatch(1)
-        lateinit var requestLine: String
-        val server = ServerSocket(0, 1, InetAddress.getLoopbackAddress())
-        val serverThread = Thread {
-            server.use {
-                serverReady.countDown()
-                it.accept().use { socket ->
-                    requestLine = BufferedReader(InputStreamReader(socket.getInputStream())).readLine()
-                    PrintWriter(socket.getOutputStream(), true).println(
-                        """{"type":"stop","status":"ok","protocolVersion":1}""",
-                    )
-                }
-            }
-        }
-        serverThread.start()
-        assertTrue(serverReady.await(5, TimeUnit.SECONDS), "fake daemon did not bind")
+        val store = DaemonRecordStore(daemonEnvironment(daemonHome))
+        val fakeDaemon = startOneShotDaemon("""{"type":"stop","status":"ok","protocolVersion":1}""")
         store.write(
-            DaemonRecord(
-                port = server.localPort,
-                token = "secret",
-                pid = 1234,
-                protocolVersion = 1,
-                daemonVersion = "0.3.0-SNAPSHOT",
-                projectPath = project.pathString,
+            daemonRecord(
+                port = fakeDaemon.port,
+                project = project,
                 mpsHome = "/opt/mps",
                 logPath = "/logs/daemon.log",
-                startupTime = "2026-05-12T12:00:00Z",
             ),
         )
         val stdout = ByteArrayOutputStream()
 
         val exitCode = newCommandLine(
             launcher = RecordingLauncher(),
-            environment = mapOf("MOPS_DAEMON_HOME" to daemonHome.pathString),
+            environment = daemonEnvironment(daemonHome),
             workingDirectory = project,
         ).also {
             it.out = PrintWriter(stdout, true)
         }.execute("daemon", "stop")
 
-        serverThread.join(5_000)
+        fakeDaemon.join()
         assertEquals(0, exitCode)
-        assertContains(requestLine, "\"type\":\"stop\"")
-        assertContains(requestLine, "\"token\":\"secret\"")
+        assertContains(fakeDaemon.requestLine, "\"type\":\"stop\"")
+        assertContains(fakeDaemon.requestLine, "\"token\":\"secret\"")
         assertContains(stdout.toString(), "stopped")
         assertNull(store.read(project))
     }
 
     @Test
     fun `daemon ping reuses an existing project daemon record`() {
-        val project = tempDir.resolve("project").createDirectories()
-        project.resolve(".mps").createDirectory()
+        val project = mpsProject()
         val daemonHome = tempDir.resolve("daemon-home")
-        val store = DaemonRecordStore(mapOf("MOPS_DAEMON_HOME" to daemonHome.pathString))
-        val serverReady = CountDownLatch(1)
-        lateinit var requestLine: String
-        val server = ServerSocket(0, 1, InetAddress.getLoopbackAddress())
-        val serverThread = Thread {
-            server.use {
-                serverReady.countDown()
-                it.accept().use { socket ->
-                    requestLine = BufferedReader(InputStreamReader(socket.getInputStream())).readLine()
-                    PrintWriter(socket.getOutputStream(), true).println(
-                        """{"type":"ping","status":"ok","protocolVersion":1,"projectPath":"${project.pathString}","mpsHome":"/opt/mps","environmentReady":true,"logPath":"/logs/daemon.log"}""",
-                    )
-                }
-            }
-        }
-        serverThread.start()
-        assertTrue(serverReady.await(5, TimeUnit.SECONDS), "fake daemon did not bind")
+        val store = DaemonRecordStore(daemonEnvironment(daemonHome))
+        val fakeDaemon = startOneShotDaemon(
+            """{"type":"ping","status":"ok","protocolVersion":1,"projectPath":"${project.pathString}","mpsHome":"/opt/mps","environmentReady":true,"logPath":"/logs/daemon.log"}""",
+        )
         store.write(
-            DaemonRecord(
-                port = server.localPort,
-                token = "secret",
-                pid = 1234,
-                protocolVersion = 1,
-                daemonVersion = "0.3.0-SNAPSHOT",
-                projectPath = project.pathString,
+            daemonRecord(
+                port = fakeDaemon.port,
+                project = project,
                 mpsHome = "/opt/mps",
                 logPath = "/logs/daemon.log",
-                startupTime = "2026-05-12T12:00:00Z",
             ),
         )
         val stdout = ByteArrayOutputStream()
 
         val exitCode = newCommandLine(
             launcher = ProcessDaemonLauncher(
-                environment = mapOf("MOPS_DAEMON_HOME" to daemonHome.pathString),
+                environment = daemonEnvironment(daemonHome),
             ),
-            environment = mapOf("MOPS_DAEMON_HOME" to daemonHome.pathString),
+            environment = daemonEnvironment(daemonHome),
             workingDirectory = project,
         ).also {
             it.out = PrintWriter(stdout, true)
         }.execute("--mps-home", "/opt/mps", "daemon", "ping")
 
-        serverThread.join(5_000)
+        fakeDaemon.join()
         assertEquals(0, exitCode)
-        assertContains(requestLine, "\"type\":\"ping\"")
-        assertContains(requestLine, "\"token\":\"secret\"")
+        assertContains(fakeDaemon.requestLine, "\"type\":\"ping\"")
+        assertContains(fakeDaemon.requestLine, "\"token\":\"secret\"")
         assertContains(stdout.toString(), "\"environmentReady\":true")
     }
 
     @Test
     fun `daemon ping removes stale daemon record before attempting autostart`() {
-        val project = tempDir.resolve("project").createDirectories()
-        project.resolve(".mps").createDirectory()
+        val project = mpsProject()
         val daemonHome = tempDir.resolve("daemon-home")
-        val store = DaemonRecordStore(mapOf("MOPS_DAEMON_HOME" to daemonHome.pathString))
+        val store = DaemonRecordStore(daemonEnvironment(daemonHome))
         store.write(
-            DaemonRecord(
+            daemonRecord(
                 port = 9,
-                token = "secret",
-                pid = 1234,
-                protocolVersion = 1,
-                daemonVersion = "0.3.0-SNAPSHOT",
-                projectPath = project.pathString,
+                project = project,
                 mpsHome = "/opt/mps",
                 logPath = "/logs/daemon.log",
-                startupTime = "2026-05-12T12:00:00Z",
             ),
         )
 
         assertFailsWith<IllegalStateException> {
             ProcessDaemonLauncher(
-                environment = mapOf("MOPS_DAEMON_HOME" to daemonHome.pathString),
+                environment = daemonEnvironment(daemonHome),
             ).ping(project, Path.of("/opt/mps"), null)
         }
 
@@ -461,72 +412,48 @@ class DaemonPingCommandTest {
 
     @Test
     fun `daemon ping fails when project is owned by different mps home`() {
-        val project = tempDir.resolve("project").createDirectories()
-        project.resolve(".mps").createDirectory()
+        val project = mpsProject()
         val daemonHome = tempDir.resolve("daemon-home")
-        val serverReady = CountDownLatch(1)
-        val server = ServerSocket(0, 1, InetAddress.getLoopbackAddress())
-        val serverThread = Thread {
-            server.use {
-                serverReady.countDown()
-                it.accept().use { socket ->
-                    BufferedReader(InputStreamReader(socket.getInputStream())).readLine()
-                    PrintWriter(socket.getOutputStream(), true).println(
-                        """{"type":"ping","status":"ok","protocolVersion":1,"projectPath":"${project.pathString}","mpsHome":"/other/mps","environmentReady":true,"logPath":"/logs/daemon.log"}""",
-                    )
-                }
-            }
-        }
-        serverThread.start()
-        assertTrue(serverReady.await(5, TimeUnit.SECONDS), "fake daemon did not bind")
-        DaemonRecordStore(mapOf("MOPS_DAEMON_HOME" to daemonHome.pathString)).write(
-            DaemonRecord(
-                port = server.localPort,
-                token = "secret",
-                pid = 1234,
-                protocolVersion = 1,
-                daemonVersion = "0.3.0-SNAPSHOT",
-                projectPath = project.pathString,
+        val fakeDaemon = startOneShotDaemon(
+            """{"type":"ping","status":"ok","protocolVersion":1,"projectPath":"${project.pathString}","mpsHome":"/other/mps","environmentReady":true,"logPath":"/logs/daemon.log"}""",
+        )
+        DaemonRecordStore(daemonEnvironment(daemonHome)).write(
+            daemonRecord(
+                port = fakeDaemon.port,
+                project = project,
                 mpsHome = "/other/mps",
                 logPath = "/logs/daemon.log",
-                startupTime = "2026-05-12T12:00:00Z",
             ),
         )
 
         val exception = assertFailsWith<IllegalStateException> {
             ProcessDaemonLauncher(
-                environment = mapOf("MOPS_DAEMON_HOME" to daemonHome.pathString),
+                environment = daemonEnvironment(daemonHome),
             ).ping(project, Path.of("/opt/mps"), null)
         }
 
-        serverThread.join(5_000)
+        fakeDaemon.join()
         assertContains(exception.message ?: "", "different MPS home")
         assertContains(exception.message ?: "", "/other/mps")
     }
 
     @Test
     fun `daemon ping removes stale daemon record before rejecting a different mps home`() {
-        val project = tempDir.resolve("project").createDirectories()
-        project.resolve(".mps").createDirectory()
+        val project = mpsProject()
         val daemonHome = tempDir.resolve("daemon-home")
-        val store = DaemonRecordStore(mapOf("MOPS_DAEMON_HOME" to daemonHome.pathString))
+        val store = DaemonRecordStore(daemonEnvironment(daemonHome))
         store.write(
-            DaemonRecord(
+            daemonRecord(
                 port = 9,
-                token = "secret",
-                pid = 1234,
-                protocolVersion = 1,
-                daemonVersion = "0.3.0-SNAPSHOT",
-                projectPath = project.pathString,
+                project = project,
                 mpsHome = "/stale/mps",
                 logPath = "/logs/daemon.log",
-                startupTime = "2026-05-12T12:00:00Z",
             ),
         )
 
         assertFailsWith<IllegalStateException> {
             ProcessDaemonLauncher(
-                environment = mapOf("MOPS_DAEMON_HOME" to daemonHome.pathString),
+                environment = daemonEnvironment(daemonHome),
             ).ping(project, Path.of("/new/mps"), null)
         }
 
@@ -535,18 +462,14 @@ class DaemonPingCommandTest {
 
     @Test
     fun `daemon ping kills newly started daemon when ready handshake is incompatible`() {
-        val project = tempDir.resolve("project").createDirectories()
-        project.resolve(".mps").createDirectory()
+        val project = mpsProject()
         val mpsHome = tempDir.resolve("mps").createDirectories()
         val daemonHome = tempDir.resolve("daemon-home")
         val classpath = System.getProperty("java.class.path")
 
         val exception = assertFailsWith<IllegalStateException> {
             ProcessDaemonLauncher(
-                environment = mapOf(
-                    "MOPS_DAEMON_HOME" to daemonHome.pathString,
-                    "MOPS_DAEMON_CLASSPATH" to classpath,
-                ),
+                environment = daemonEnvironment(daemonHome, "MOPS_DAEMON_CLASSPATH" to classpath),
             ).ping(project, mpsHome, null)
         }
 
@@ -558,8 +481,7 @@ class DaemonPingCommandTest {
 
     @Test
     fun `daemon ping starts daemon with bundled MPS jbr when java home is not explicit`() {
-        val project = tempDir.resolve("project").createDirectories()
-        project.resolve(".mps").createDirectory()
+        val project = mpsProject()
         val mpsHome = tempDir.resolve("mps").createDirectories()
         val daemonHome = tempDir.resolve("daemon-home")
         val selectedJava = daemonHome.resolve("selected-java.txt")
@@ -577,8 +499,8 @@ class DaemonPingCommandTest {
 
         assertFailsWith<IllegalStateException> {
             ProcessDaemonLauncher(
-                environment = mapOf(
-                    "MOPS_DAEMON_HOME" to daemonHome.pathString,
+                environment = daemonEnvironment(
+                    daemonHome,
                     "MOPS_DAEMON_CLASSPATH" to System.getProperty("java.class.path"),
                 ),
             ).ping(project, mpsHome, null)
@@ -589,15 +511,14 @@ class DaemonPingCommandTest {
 
     @Test
     fun `daemon ping reports startup error emitted before ready`() {
-        val project = tempDir.resolve("project").createDirectories()
-        project.resolve(".mps").createDirectory()
+        val project = mpsProject()
         val mpsHome = tempDir.resolve("mps").createDirectories()
         val daemonHome = tempDir.resolve("daemon-home")
 
         val exception = assertFailsWith<IllegalStateException> {
             ProcessDaemonLauncher(
-                environment = mapOf(
-                    "MOPS_DAEMON_HOME" to daemonHome.pathString,
+                environment = daemonEnvironment(
+                    daemonHome,
                     "MOPS_DAEMON_CLASSPATH" to System.getProperty("java.class.path"),
                     "MOPS_FAKE_DAEMON_STARTUP_ERROR" to "1",
                 ),
@@ -607,6 +528,57 @@ class DaemonPingCommandTest {
         assertContains(exception.message ?: "", "JVM_VERSION_MISMATCH")
         assertContains(exception.message ?: "", "required Java 21")
         assertContains(exception.message ?: "", "Daemon log:")
+    }
+
+    private fun mpsProject(name: String = "project"): Path {
+        val project = tempDir.resolve(name).createDirectories()
+        project.resolve(".mps").createDirectory()
+        return project
+    }
+
+    private fun daemonRecord(
+        project: Path,
+        port: Int,
+        token: String = "secret",
+        pid: Long = 1234,
+        mpsHome: String,
+        logPath: String,
+        startupTime: String = "2026-05-12T12:00:00Z",
+    ): DaemonRecord =
+        DaemonRecord(
+            port = port,
+            token = token,
+            pid = pid,
+            protocolVersion = 1,
+            daemonVersion = "0.3.0-SNAPSHOT",
+            projectPath = project.pathString,
+            mpsHome = mpsHome,
+            logPath = logPath,
+            startupTime = startupTime,
+        )
+
+    private fun daemonEnvironment(daemonHome: Path, vararg entries: Pair<String, String>): Map<String, String> =
+        buildMap {
+            put("MOPS_DAEMON_HOME", daemonHome.pathString)
+            putAll(entries)
+        }
+
+    private fun startOneShotDaemon(response: String): OneShotDaemon {
+        val serverReady = CountDownLatch(1)
+        val server = ServerSocket(0, 1, InetAddress.getLoopbackAddress())
+        val daemon = OneShotDaemon(server.localPort)
+        daemon.thread = Thread {
+            server.use {
+                serverReady.countDown()
+                it.accept().use { socket ->
+                    daemon.requestLine = BufferedReader(InputStreamReader(socket.getInputStream())).readLine()
+                    PrintWriter(socket.getOutputStream(), true).println(response)
+                }
+            }
+        }
+        daemon.thread.start()
+        assertTrue(serverReady.await(5, TimeUnit.SECONDS), "fake daemon did not bind")
+        return daemon
     }
 
     private fun assertProcessStops(pid: Long) {
@@ -625,6 +597,17 @@ class DaemonPingCommandTest {
         Path.of(System.getProperty("java.home"))
             .resolve("bin")
             .resolve(if (System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java")
+}
+
+private class OneShotDaemon(
+    val port: Int,
+) {
+    lateinit var thread: Thread
+    lateinit var requestLine: String
+
+    fun join() {
+        thread.join(5_000)
+    }
 }
 
 private class RecordingLauncher : DaemonProcessLauncher {
