@@ -1,5 +1,6 @@
 plugins {
     base
+    kotlin("jvm") version "2.3.21" apply false
 }
 
 group = "com.specificlanguages.mops"
