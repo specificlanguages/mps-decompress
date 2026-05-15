@@ -3,7 +3,6 @@ package com.specificlanguages.mops.daemon
 import com.specificlanguages.mops.protocol.MpsBuildProperties
 import java.nio.file.Files
 import java.nio.file.Path
-import java.time.Instant
 import kotlin.io.path.createDirectories
 import kotlin.io.path.pathString
 
@@ -57,13 +56,7 @@ class MpsRuntimeBootstrap(
     }
 
     fun log(message: String) {
-        logPath.parent.createDirectories()
-        Files.writeString(
-            logPath,
-            "${Instant.now()} $message\n",
-            java.nio.file.StandardOpenOption.CREATE,
-            java.nio.file.StandardOpenOption.APPEND,
-        )
+        DaemonLog.append(logPath, message)
     }
 
     private fun requireDirectory(path: Path, label: String) {

@@ -1,14 +1,12 @@
 package com.specificlanguages.mops.daemon
 
 import com.specificlanguages.mops.protocol.*
-import picocli.CommandLine.*
 import picocli.CommandLine.Model.CommandSpec
-import java.nio.file.Files
+import picocli.CommandLine.*
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.Callable
-import kotlin.io.path.createDirectories
 import kotlin.io.path.pathString
 
 @Command(
@@ -92,14 +90,8 @@ class MopsDaemonCommand(
     }
 
     private fun writeStartupError(failure: MpsJvmCompatibility.Failure, logPath: Path) {
-        logPath.parent.createDirectories()
         val message = "startup failed: ${failure.message}"
-        Files.writeString(
-            logPath,
-            "${Instant.now()} $message\n",
-            java.nio.file.StandardOpenOption.CREATE,
-            java.nio.file.StandardOpenOption.APPEND,
-        )
+        DaemonLog.append(logPath, message)
         spec.commandLine().out.println(
             GsonCodec.toJson(
                 DaemonErrorResponse(

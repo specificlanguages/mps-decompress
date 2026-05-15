@@ -1,6 +1,5 @@
 plugins {
-    kotlin("jvm")
-    application
+    id("mops.kotlin-application-conventions")
 }
 
 val mpsZip: Configuration by configurations.creating
@@ -29,23 +28,12 @@ dependencies {
         include("lib/app.jar")
     })
     mpsZip("com.jetbrains:mps:2024.3.1")
-
-    testImplementation(kotlin("test"))
-    testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
     testRuntimeOnly(zipTree({ mpsZip.singleFile }).matching {
         include("lib/mps-openapi.jar")
     })
 }
 
-kotlin {
-    jvmToolchain(17)
-}
-
 application {
     applicationName = "mops-daemon"
     mainClass = "com.specificlanguages.mops.daemon.MainKt"
-}
-
-tasks.withType<Test>().configureEach {
-    useJUnitPlatform()
 }
