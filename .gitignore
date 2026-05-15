@@ -1,5 +1,5 @@
 /.idea/
-**/.gradle/
-/.scratch/
+.gradle/
+.kotlin/
 build/
-**/build/
+/.scratch/
