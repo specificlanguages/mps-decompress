@@ -7,8 +7,8 @@ sealed interface DaemonResponse {
 }
 
 data class PingResponse(
-    override val type: String,
-    override val status: String,
+    override val type: String = "ping",
+    override val status: String = "ok",
     override val protocolVersion: Int,
     val projectPath: String,
     val mpsHome: String,
@@ -18,9 +18,9 @@ data class PingResponse(
     val ideaSystemPath: String? = null,
 ) : DaemonResponse
 
-data class DaemonControlResponse(
-    override val type: String,
-    override val status: String,
+data class StopResponse(
+    override val type: String = "stop",
+    override val status: String = "ok",
     override val protocolVersion: Int,
     val message: String? = null,
 ) : DaemonResponse

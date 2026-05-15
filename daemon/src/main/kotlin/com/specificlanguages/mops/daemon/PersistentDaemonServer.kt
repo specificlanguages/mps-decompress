@@ -1,14 +1,16 @@
 package com.specificlanguages.mops.daemon
 
-import com.specificlanguages.mops.protocol.DaemonControlResponse
+import com.specificlanguages.mops.protocol.DaemonRequest
 import com.specificlanguages.mops.protocol.DaemonErrorResponse
-import com.specificlanguages.mops.protocol.DaemonRequestEnvelope
 import com.specificlanguages.mops.protocol.DaemonResponse
 import com.specificlanguages.mops.protocol.GsonCodec
 import com.specificlanguages.mops.protocol.ModelResaveRequest
 import com.specificlanguages.mops.protocol.PingResponse
+import com.specificlanguages.mops.protocol.PingRequest
 import com.specificlanguages.mops.protocol.ProtocolVersion
 import com.specificlanguages.mops.protocol.ReadyMessage
+import com.specificlanguages.mops.protocol.StopRequest
+import com.specificlanguages.mops.protocol.StopResponse
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter
@@ -59,30 +61,25 @@ class PersistentDaemonServer(
     }
 
     fun handle(requestLine: String?): DaemonResponse {
-        val envelope = try {
-            GsonCodec.fromJson(requestLine, DaemonRequestEnvelope::class.java)
-        } catch (_: RuntimeException) {
-            return error("error", "INVALID_REQUEST", "request must be one newline-delimited JSON object")
+        val request = try {
+            GsonCodec.fromJson(requestLine, DaemonRequest::class.java)
+        } catch (exception: RuntimeException) {
+            return error("error", "INVALID_REQUEST", invalidRequestMessage(exception))
         }
 
-        if (envelope == null) {
+        if (request == null) {
             return error("error", "INVALID_REQUEST", "request must be one newline-delimited JSON object")
         }
-        val requestType = envelope.type
-        if (requestType.isNullOrBlank()) {
-            return error("error", "INVALID_REQUEST", "request type is required")
+        val requestType = request.type
+        if (request.protocolVersion != protocolVersion) {
+            return error(requestType, "PROTOCOL_MISMATCH", "unsupported protocol version ${request.protocolVersion}")
         }
-        if (envelope.protocolVersion != protocolVersion) {
-            return error(requestType, "PROTOCOL_MISMATCH", "unsupported protocol version ${envelope.protocolVersion}")
-        }
-        if (envelope.token != expectedToken) {
+        if (request.token != expectedToken) {
             return error(requestType, "TOKEN_MISMATCH", "invalid daemon token")
         }
 
-        return when (requestType) {
-            "ping" -> PingResponse(
-                type = "ping",
-                status = "ok",
+        return when (request) {
+            is PingRequest -> PingResponse(
                 protocolVersion = protocolVersion,
                 projectPath = environment.projectPath.pathString,
                 mpsHome = environment.mpsHome.pathString,
@@ -91,22 +88,12 @@ class PersistentDaemonServer(
                 ideaConfigPath = environment.ideaConfigDir.pathString,
                 ideaSystemPath = environment.ideaSystemDir.pathString,
             )
-            "stop" -> DaemonControlResponse(
-                type = "stop",
-                status = "ok",
+            is StopRequest -> StopResponse(
                 protocolVersion = protocolVersion,
             )
-            "model-resave" -> resaveModel(modelResaveRequest(requestLine ?: ""))
-            else -> error(requestType, "INVALID_REQUEST", "unsupported request type $requestType")
+            is ModelResaveRequest -> resaveModel(request)
         }
     }
-
-    private fun modelResaveRequest(requestLine: String): ModelResaveRequest? =
-        try {
-            GsonCodec.fromJson(requestLine, ModelResaveRequest::class.java)
-        } catch (_: RuntimeException) {
-            null
-        }
 
     private fun resaveModel(request: ModelResaveRequest?): DaemonResponse {
         if (request?.modelTarget.isNullOrBlank()) {
@@ -131,4 +118,9 @@ class PersistentDaemonServer(
             message = message,
             logPath = logPath,
         )
+
+    private fun invalidRequestMessage(exception: RuntimeException): String =
+        exception.message
+            ?.takeIf { it == "request type is required" || it.startsWith("unsupported request type ") }
+            ?: "request must be one newline-delimited JSON object"
 }

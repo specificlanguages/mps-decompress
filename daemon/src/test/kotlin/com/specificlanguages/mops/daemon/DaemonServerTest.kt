@@ -1,11 +1,12 @@
 package com.specificlanguages.mops.daemon
 
 import com.google.gson.Gson
-import com.specificlanguages.mops.protocol.DaemonControlRequest
-import com.specificlanguages.mops.protocol.DaemonControlResponse
 import com.specificlanguages.mops.protocol.DaemonErrorResponse
 import com.specificlanguages.mops.protocol.PingResponse
+import com.specificlanguages.mops.protocol.PingRequest
 import com.specificlanguages.mops.protocol.ReadyMessage
+import com.specificlanguages.mops.protocol.StopRequest
+import com.specificlanguages.mops.protocol.StopResponse
 import java.io.ByteArrayOutputStream
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -37,7 +38,7 @@ class DaemonServerTest {
     @Test
     fun `successful ping returns project and mps home`() {
         val response = persistentServer().handle(
-            gson.toJson(DaemonControlRequest(type = "ping", protocolVersion = 1, token = "secret")),
+            gson.toJson(PingRequest(protocolVersion = 1, token = "secret")),
         )
 
         assertEquals(
@@ -59,7 +60,7 @@ class DaemonServerTest {
     @Test
     fun `token mismatch returns structured error`() {
         val response = persistentServer().handle(
-            gson.toJson(DaemonControlRequest(type = "ping", protocolVersion = 1, token = "wrong")),
+            gson.toJson(PingRequest(protocolVersion = 1, token = "wrong")),
         )
 
         assertEquals(
@@ -76,7 +77,7 @@ class DaemonServerTest {
     @Test
     fun `protocol mismatch returns structured error`() {
         val response = persistentServer().handle(
-            gson.toJson(DaemonControlRequest(type = "ping", protocolVersion = 999, token = "secret")),
+            gson.toJson(PingRequest(protocolVersion = 999, token = "secret")),
         )
 
         assertEquals(
@@ -238,9 +239,9 @@ class DaemonServerTest {
         thread.start()
 
         assertTrue(latch.await(5, TimeUnit.SECONDS), "server did not bind a socket")
-        assertEquals("ok", exchange(ready.port, DaemonControlRequest(type = "ping", protocolVersion = 1, token = "secret")).status)
-        assertEquals("ok", exchange(ready.port, DaemonControlRequest(type = "ping", protocolVersion = 1, token = "secret")).status)
-        assertEquals("ok", exchangeControl(ready.port, DaemonControlRequest(type = "stop", protocolVersion = 1, token = "secret")).status)
+        assertEquals("ok", exchange(ready.port, PingRequest(protocolVersion = 1, token = "secret")).status)
+        assertEquals("ok", exchange(ready.port, PingRequest(protocolVersion = 1, token = "secret")).status)
+        assertEquals("ok", exchangeControl(ready.port, StopRequest(protocolVersion = 1, token = "secret")).status)
         thread.join(5_000)
 
         assertTrue(!thread.isAlive, "server did not exit after stop")
@@ -312,12 +313,12 @@ class DaemonServerTest {
             }
         }
 
-    private fun exchangeControl(port: Int, request: Any): DaemonControlResponse =
+    private fun exchangeControl(port: Int, request: Any): StopResponse =
         Socket(InetAddress.getLoopbackAddress(), port).use { socket ->
             PrintWriter(socket.getOutputStream(), true).use { writer ->
                 BufferedReader(InputStreamReader(socket.getInputStream())).use { reader ->
                     writer.println(gson.toJson(request))
-                    gson.fromJson(reader.readLine(), DaemonControlResponse::class.java)
+                    gson.fromJson(reader.readLine(), StopResponse::class.java)
                 }
             }
         }

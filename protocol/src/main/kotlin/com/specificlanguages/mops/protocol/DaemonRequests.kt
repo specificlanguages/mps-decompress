@@ -6,8 +6,14 @@ sealed interface DaemonRequest {
     val token: String
 }
 
-data class DaemonControlRequest(
-    override val type: String,
+data class PingRequest(
+    override val type: String = "ping",
+    override val protocolVersion: Int,
+    override val token: String,
+) : DaemonRequest
+
+data class StopRequest(
+    override val type: String = "stop",
     override val protocolVersion: Int,
     override val token: String,
 ) : DaemonRequest

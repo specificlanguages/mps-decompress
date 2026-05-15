@@ -2,6 +2,7 @@ package com.specificlanguages.mops.cli
 
 import com.specificlanguages.mops.protocol.DaemonRecord
 import com.specificlanguages.mops.protocol.DaemonRecordStore
+import com.specificlanguages.mops.protocol.DaemonErrorResponse
 import com.specificlanguages.mops.protocol.DaemonResponse
 import com.specificlanguages.mops.protocol.GsonCodec
 import com.specificlanguages.mops.protocol.PingResponse
@@ -196,37 +197,22 @@ class ProcessDaemonLauncher(
     }
 
     private fun parseStartupMessage(line: String, fallbackLogPath: Path): ReadyMessage {
-        val message = GsonCodec.fromJson(line, DaemonStartupMessage::class.java)
+        val message = GsonCodec.fromJson(line, DaemonResponse::class.java)
             ?: throw IllegalStateException("daemon did not report a startup message")
-        if (message.status == "error" || message.type == "error") {
-            val detail = listOfNotNull(message.errorCode, message.message).joinToString(": ")
+        if (message is DaemonErrorResponse) {
+            val detail = listOf(message.errorCode, message.message).joinToString(": ")
                 .ifBlank { "unknown daemon startup error" }
             val logPath = message.logPath?.let { Path.of(it) } ?: fallbackLogPath
             throw daemonStartupException("daemon startup failed: $detail", logPath)
         }
-        if (message.type != "ready" || message.port == null) {
+        if (message !is ReadyMessage) {
             throw IllegalStateException("daemon did not report a compatible ready message")
         }
-        return ReadyMessage(
-            type = "ready",
-            status = message.status ?: "ok",
-            protocolVersion = message.protocolVersion,
-            port = message.port,
-        )
+        return message
     }
 
     private fun daemonStartupException(message: String, logPath: Path): IllegalStateException =
         IllegalStateException("$message. Daemon log: ${logPath.pathString}")
-
-    private data class DaemonStartupMessage(
-        val type: String? = null,
-        val status: String? = null,
-        val protocolVersion: Int = 0,
-        val port: Int? = null,
-        val errorCode: String? = null,
-        val message: String? = null,
-        val logPath: String? = null,
-    )
 
     private data class DaemonReady(
         val record: DaemonRecord,
