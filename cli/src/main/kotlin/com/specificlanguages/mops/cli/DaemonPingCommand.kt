@@ -6,6 +6,9 @@ import picocli.CommandLine.Model.CommandSpec
 import picocli.CommandLine.ParentCommand
 import picocli.CommandLine.Spec
 
+/**
+ * CLI command that proves daemon startup and protocol compatibility for the current MPS project.
+ */
 @Command(name = "ping", description = ["Start or reuse a project daemon and exchange a ping request."])
 class DaemonPingCommand : Runnable {
     @ParentCommand

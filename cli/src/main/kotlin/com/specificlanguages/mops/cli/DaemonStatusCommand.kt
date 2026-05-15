@@ -8,6 +8,11 @@ import picocli.CommandLine.Option
 import picocli.CommandLine.ParentCommand
 import picocli.CommandLine.Spec
 
+/**
+ * Reads persisted daemon records and reports which project daemons are known locally.
+ *
+ * Status is intentionally record-based: it does not start a daemon or require an MPS home.
+ */
 @Command(name = "status", description = ["Print daemon status."])
 class DaemonStatusCommand : Runnable {
     @ParentCommand

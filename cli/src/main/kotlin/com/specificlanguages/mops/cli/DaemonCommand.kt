@@ -4,6 +4,9 @@ import picocli.CommandLine
 import picocli.CommandLine.Command
 import picocli.CommandLine.ParentCommand
 
+/**
+ * Picocli command group for daemon lifecycle operations.
+ */
 @Command(
     name = "daemon",
     description = ["Inspect or control mops daemon processes."],

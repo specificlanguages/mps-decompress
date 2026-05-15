@@ -4,6 +4,9 @@ import picocli.CommandLine
 import picocli.CommandLine.Command
 import picocli.CommandLine.ParentCommand
 
+/**
+ * Picocli command group for model-level operations that require a loaded MPS project.
+ */
 @Command(
     name = "model",
     description = ["Run model operations through the mops daemon."],

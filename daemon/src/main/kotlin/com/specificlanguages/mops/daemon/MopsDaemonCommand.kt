@@ -9,6 +9,12 @@ import java.time.Instant
 import java.util.concurrent.Callable
 import kotlin.io.path.pathString
 
+/**
+ * Daemon process entry command.
+ *
+ * The command validates the JVM against the requested MPS distribution, opens the MPS project once, writes the daemon
+ * record only after the socket is ready, and then serves local protocol requests until stopped or idle.
+ */
 @Command(
     name = "mops-daemon",
     mixinStandardHelpOptions = true,

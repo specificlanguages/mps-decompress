@@ -12,3 +12,4 @@ formatting and naming.
 - In tests, when expected values cover a data object's properties, compare the complete data object instead of asserting
   every property separately. This keeps the assertion aligned with the object's equality contract and catches newly added
   properties.
+- Wildcard imports are acceptable.

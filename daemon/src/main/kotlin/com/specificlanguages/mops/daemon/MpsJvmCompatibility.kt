@@ -3,12 +3,24 @@ package com.specificlanguages.mops.daemon
 import com.specificlanguages.mops.protocol.MpsBuildProperties
 import java.nio.file.Path
 
+/**
+ * Validates that the daemon JVM can safely bootstrap the requested MPS distribution.
+ *
+ * MPS is sensitive to both Java major version and JetBrains Runtime patches, so the daemon fails before loading MPS
+ * when the current runtime does not match the selected installation.
+ */
 object MpsJvmCompatibility {
+    /**
+     * User-facing startup failure returned to the CLI before MPS boot begins.
+     */
     data class Failure(
         val code: String,
         val message: String,
     )
 
+    /**
+     * JVM identity facts used to compare the current process with MPS runtime requirements.
+     */
     data class JavaRuntime(
         val major: Int,
         val vendor: String,

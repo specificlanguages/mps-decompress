@@ -6,6 +6,12 @@ import picocli.CommandLine
 import picocli.CommandLine.Command
 import picocli.CommandLine.Option
 
+/**
+ * Root CLI command shared by all daemon-backed operations.
+ *
+ * The root owns process-launch dependencies and global options so subcommands can be tested with fake launchers and
+ * explicit environment maps instead of reading process globals directly.
+ */
 @Command(
     name = "mops",
     mixinStandardHelpOptions = true,

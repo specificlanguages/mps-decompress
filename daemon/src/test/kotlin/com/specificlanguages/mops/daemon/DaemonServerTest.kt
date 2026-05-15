@@ -1,14 +1,12 @@
 package com.specificlanguages.mops.daemon
 
 import com.google.gson.Gson
-import com.specificlanguages.mops.protocol.DaemonErrorResponse
-import com.specificlanguages.mops.protocol.PingResponse
-import com.specificlanguages.mops.protocol.PingRequest
-import com.specificlanguages.mops.protocol.ReadyMessage
-import com.specificlanguages.mops.protocol.StopRequest
-import com.specificlanguages.mops.protocol.StopResponse
-import java.io.ByteArrayOutputStream
+import com.specificlanguages.mops.protocol.*
+import org.jetbrains.mps.openapi.project.Project
+import org.junit.jupiter.api.io.TempDir
+import picocli.CommandLine
 import java.io.BufferedReader
+import java.io.ByteArrayOutputStream
 import java.io.InputStreamReader
 import java.io.PrintWriter
 import java.net.InetAddress
@@ -16,18 +14,11 @@ import java.net.Socket
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import kotlin.io.path.createDirectory
 import kotlin.io.path.createDirectories
+import kotlin.io.path.createDirectory
 import kotlin.io.path.exists
 import kotlin.io.path.pathString
-import kotlin.test.Test
-import kotlin.test.assertContains
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertTrue
-import org.jetbrains.mps.openapi.project.Project
-import org.junit.jupiter.api.io.TempDir
-import picocli.CommandLine
+import kotlin.test.*
 
 class DaemonServerTest {
     private val gson = Gson()
@@ -333,6 +324,7 @@ class DaemonServerTest {
 private class RecordingProjectSessionOpener : MpsProjectSessionOpener {
     var config: MpsProjectSessionConfig? = null
 
+    @Suppress("UNCHECKED_CAST")
     override fun <T> withOpenProject(config: MpsProjectSessionConfig, action: (Project) -> T): T {
         this.config = config
         return action(FakeMpsProject)

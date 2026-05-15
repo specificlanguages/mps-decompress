@@ -20,6 +20,12 @@ import java.nio.file.Path
 import java.time.Duration
 import kotlin.io.path.pathString
 
+/**
+ * Synchronous loopback client for the newline-delimited daemon JSON protocol.
+ *
+ * Each call opens one short-lived socket, writes exactly one request, and reads exactly one response. Higher-level
+ * launcher code owns daemon discovery and startup; this class only speaks to a daemon record that is already known.
+ */
 class DaemonClient(
     private val timeout: Duration = Duration.ofSeconds(5),
 ) {

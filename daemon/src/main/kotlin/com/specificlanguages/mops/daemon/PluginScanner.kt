@@ -12,6 +12,12 @@ import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.io.path.isDirectory
 import org.w3c.dom.Document
 
+/**
+ * Finds classic IntelliJ/MPS plugin descriptors under an MPS `plugins` directory.
+ *
+ * The scanner is deliberately tolerant: unreadable descriptors and plugins without a single explicit `<id>` are skipped
+ * instead of failing daemon startup.
+ */
 object PluginScanner {
     fun findPlugins(root: Path): List<DetectedPlugin> {
         if (!root.isDirectory()) {

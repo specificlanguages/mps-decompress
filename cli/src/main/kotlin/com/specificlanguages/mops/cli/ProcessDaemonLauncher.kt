@@ -10,9 +10,15 @@ import java.io.InputStreamReader
 import java.nio.file.Path
 import java.time.Duration
 import java.util.UUID
-import kotlin.io.path.absolute
 import kotlin.io.path.pathString
 
+/**
+ * Production daemon launcher used by CLI commands.
+ *
+ * It reuses a compatible project daemon when possible, deletes stale records, and otherwise starts a new JVM with the
+ * daemon distribution plus the selected MPS runtime classpath. Startup is complete only after the child process reports
+ * a protocol-compatible ready message and responds to an authenticated ping.
+ */
 class ProcessDaemonLauncher(
     private val environment: Map<String, String> = System.getenv(),
     private val timeout: Duration = Duration.ofSeconds(15),
@@ -23,24 +29,24 @@ class ProcessDaemonLauncher(
 
     override fun resave(projectPath: Path, mpsHome: Path, javaHome: Path?, modelTarget: Path): DaemonResponse {
         val record = ensureDaemon(projectPath, mpsHome, javaHome).record
-        return DaemonClient(timeout).resave(record, modelTarget.absolute().normalize())
+        return DaemonClient(timeout).resave(record, modelTarget.toRealPath())
     }
 
     private fun ensureDaemon(projectPath: Path, mpsHome: Path, javaHome: Path?): DaemonReady {
         val records = DaemonRecordStore(environment)
-        val normalizedProject = projectPath.absolute().normalize()
-        val normalizedMpsHome = mpsHome.absolute().normalize()
-        val existing = records.read(normalizedProject)
+        val realProject = projectPath.toRealPath()
+        val realMpsHome = mpsHome.toRealPath()
+        val existing = records.read(realProject)
         if (existing != null) {
             if (existing.protocolVersion == ProtocolVersion) {
                 val existingResponse = try {
                     DaemonClient(timeout).ping(existing)
                 } catch (_: Exception) {
-                    records.delete(normalizedProject)
+                    records.delete(realProject)
                     null
                 }
                 if (existingResponse != null) {
-                    if (Path.of(existing.mpsHome).absolute().normalize() != normalizedMpsHome) {
+                    if (Path.of(existing.mpsHome).toRealPath() != realMpsHome) {
                         throw IllegalStateException(
                             "project is already owned by a mops daemon with a different MPS home: ${existing.mpsHome}",
                         )
@@ -48,16 +54,16 @@ class ProcessDaemonLauncher(
                     return DaemonReady(existing, existingResponse)
                 }
             } else {
-                records.delete(normalizedProject)
+                records.delete(realProject)
             }
         }
 
         val token = UUID.randomUUID().toString()
         val daemonClasspath = DaemonClasspath(environment)
-        val launch = DaemonLaunch.prepare(normalizedProject, normalizedMpsHome, javaHome, environment)
+        val launch = DaemonLaunch.prepare(realProject, realMpsHome, javaHome, environment)
         val runtimeClasspath = listOf(
             daemonClasspath.daemonClasspath(),
-            daemonClasspath.mpsRuntimeClasspath(normalizedMpsHome),
+            daemonClasspath.mpsRuntimeClasspath(realMpsHome),
         )
             .filter { it.isNotBlank() }
             .joinToString(java.io.File.pathSeparator)
@@ -85,7 +91,7 @@ class ProcessDaemonLauncher(
             .directory(launch.workDir.toFile())
             .redirectError(ProcessBuilder.Redirect.appendTo(launch.logPath.toFile()))
         processBuilder.environment().putAll(environment)
-        processBuilder.environment()["MOPS_MPS_HOME"] = normalizedMpsHome.pathString
+        processBuilder.environment()["MOPS_MPS_HOME"] = realMpsHome.pathString
         val process = processBuilder.start()
 
         var startupSucceeded = false
@@ -102,7 +108,7 @@ class ProcessDaemonLauncher(
                 throw IllegalStateException("daemon ping failed with status ${response.status}")
             }
             startupSucceeded = true
-            val record = records.read(normalizedProject)
+            val record = records.read(realProject)
                 ?: throw IllegalStateException("daemon did not write its project record")
             return DaemonReady(record, response)
         } finally {

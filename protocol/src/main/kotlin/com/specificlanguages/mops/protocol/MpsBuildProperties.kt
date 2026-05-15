@@ -11,6 +11,9 @@ object MpsBuildProperties {
     ) : Comparable<Version> {
         override fun compareTo(other: Version): Int =
             compareValuesBy(this, other, Version::major, Version::minor)
+
+        fun isAtLeast(major: Int, minor: Int): Boolean =
+            this.major > major || this.major == major && this.minor >= minor
     }
 
     fun buildNumber(mpsHome: Path): String? {

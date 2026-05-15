@@ -9,6 +9,12 @@ import picocli.CommandLine.Option
 import picocli.CommandLine.ParentCommand
 import picocli.CommandLine.Spec
 
+/**
+ * Stops known daemon processes and removes stale daemon records.
+ *
+ * Like status, stop works from persisted records and does not require an MPS home. A failed stop attempt is treated as a
+ * stale process because the record is no longer useful for future autostart decisions.
+ */
 @Command(name = "stop", description = ["Stop a daemon process."])
 class DaemonStopCommand : Runnable {
     @ParentCommand

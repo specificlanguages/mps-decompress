@@ -8,6 +8,12 @@ import kotlin.io.path.absolute
 import kotlin.io.path.createDirectories
 import kotlin.io.path.pathString
 
+/**
+ * Filesystem-backed registry of daemon records.
+ *
+ * Records live outside the MPS project under the daemon state directory. The project path is hashed into the directory
+ * name so the CLI can find, reuse, stop, or discard project-specific daemons without scanning process tables.
+ */
 class DaemonRecordStore(
     private val environment: Map<String, String> = System.getenv(),
 ) {
@@ -63,10 +69,10 @@ class DaemonRecordStore(
             environment["MOPS_DAEMON_HOME"]
                 ?.takeIf { it.isNotBlank() }
                 ?.let { Path.of(it).absolute().normalize() }
-                ?: Path.of(System.getProperty("user.home"), ".mops", "daemon").absolute().normalize()
+                ?: Path.of(System.getProperty("user.home"), ".mops", "daemon")
 
         fun projectKey(projectPath: Path): String =
-            sha256(projectPath.absolute().normalize().pathString)
+            sha256(projectPath.toRealPath().pathString)
 
         private fun sha256(value: String): String {
             val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))

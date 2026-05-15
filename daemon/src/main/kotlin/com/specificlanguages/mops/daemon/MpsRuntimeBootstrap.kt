@@ -6,6 +6,12 @@ import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.pathString
 
+/**
+ * Prepares daemon-local MPS runtime state and opens the requested project.
+ *
+ * This class validates the filesystem shape, creates isolated IntelliJ config/system directories, logs startup
+ * progress, and delegates the actual MPS project loading to [MpsProjectSessionOpener].
+ */
 class MpsRuntimeBootstrap(
     private val projectPath: Path,
     private val mpsHome: Path,
@@ -40,7 +46,7 @@ class MpsRuntimeBootstrap(
         val environment = initialize()
         val pluginRoot = mpsHome.resolve("plugins")
         val plugins = PluginScanner.findPlugins(pluginRoot)
-        log("opening IDEA environment for project ${projectPath.pathString} with ${plugins.size} plugins from ${pluginRoot.pathString}")
+        log("opening project-loader environment for project ${projectPath.pathString} with ${plugins.size} plugins from ${pluginRoot.pathString}")
         return projectSessionOpener.withOpenProject(
             MpsProjectSessionConfig(
                 projectPath = projectPath,

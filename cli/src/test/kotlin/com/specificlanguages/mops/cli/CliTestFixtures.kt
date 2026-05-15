@@ -20,13 +20,13 @@ import kotlin.test.assertTrue
 internal fun Path.mpsProject(name: String = "project"): Path {
     val project = resolve(name).createDirectories()
     project.resolve(".mps").createDirectory()
-    return project
+    return project.toRealPath()
 }
 
 internal fun Path.mpsHome(name: String = "mps", buildNumber: String = "MPS-213.7172.1079"): Path {
     val mpsHome = resolve(name).createDirectories()
     mpsHome.resolve("build.properties").writeText("mps.build.number=$buildNumber\n")
-    return mpsHome
+    return mpsHome.toRealPath()
 }
 
 internal fun daemonRecord(
@@ -34,7 +34,7 @@ internal fun daemonRecord(
     port: Int,
     token: String = "secret",
     pid: Long = 1234,
-    mpsHome: String,
+    mpsHome: Path,
     logPath: String,
     startupTime: String = "2026-05-12T12:00:00Z",
 ): DaemonRecord =
@@ -45,7 +45,7 @@ internal fun daemonRecord(
         protocolVersion = 1,
         daemonVersion = "0.3.0-SNAPSHOT",
         projectPath = project.pathString,
-        mpsHome = mpsHome,
+        mpsHome = mpsHome.pathString,
         logPath = logPath,
         startupTime = startupTime,
     )

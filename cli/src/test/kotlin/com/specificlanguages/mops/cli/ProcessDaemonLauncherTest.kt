@@ -1,9 +1,7 @@
 package com.specificlanguages.mops.cli
 
 import com.specificlanguages.mops.protocol.DaemonRecordStore
-import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.io.path.createDirectories
 import kotlin.io.path.pathString
 import kotlin.io.path.readText
 import kotlin.test.Test
@@ -21,15 +19,17 @@ class ProcessDaemonLauncherTest {
     fun `daemon ping reuses an existing project daemon record`() {
         val project = tempDir.mpsProject()
         val daemonHome = tempDir.resolve("daemon-home")
+        val mpsHome = tempDir.mpsHome()
+
         val store = DaemonRecordStore(daemonEnvironment(daemonHome))
         val fakeDaemon = startOneShotDaemon(
-            """{"type":"ping","status":"ok","protocolVersion":1,"projectPath":"${project.pathString}","mpsHome":"/opt/mps","environmentReady":true,"logPath":"/logs/daemon.log"}""",
+            """{"type":"ping","status":"ok","protocolVersion":1,"projectPath":"${project.pathString}","mpsHome":"${mpsHome.pathString}","environmentReady":true,"logPath":"/logs/daemon.log"}""",
         )
         store.write(
             daemonRecord(
                 port = fakeDaemon.port,
                 project = project,
-                mpsHome = "/opt/mps",
+                mpsHome = mpsHome,
                 logPath = "/logs/daemon.log",
             ),
         )
@@ -40,7 +40,7 @@ class ProcessDaemonLauncherTest {
             ),
             environment = daemonEnvironment(daemonHome),
             workingDirectory = project,
-        ).execute("--mps-home", "/opt/mps", "daemon", "ping")
+        ).execute("--mps-home", mpsHome.pathString, "daemon", "ping")
 
         fakeDaemon.join()
         assertEquals(0, exitCode)
@@ -53,11 +53,13 @@ class ProcessDaemonLauncherTest {
         val project = tempDir.mpsProject()
         val daemonHome = tempDir.resolve("daemon-home")
         val store = DaemonRecordStore(daemonEnvironment(daemonHome))
+        val mpsHome = tempDir.mpsHome()
+
         store.write(
             daemonRecord(
                 port = 9,
                 project = project,
-                mpsHome = "/opt/mps",
+                mpsHome = mpsHome,
                 logPath = "/logs/daemon.log",
             ),
         )
@@ -65,7 +67,7 @@ class ProcessDaemonLauncherTest {
         assertFailsWith<IllegalStateException> {
             ProcessDaemonLauncher(
                 environment = daemonEnvironment(daemonHome),
-            ).ping(project, Path.of("/opt/mps"), Path.of(System.getProperty("java.home")))
+            ).ping(project, mpsHome, Path.of(System.getProperty("java.home")))
         }
 
         assertNull(store.read(project))
@@ -75,14 +77,17 @@ class ProcessDaemonLauncherTest {
     fun `daemon ping fails when project is owned by different mps home`() {
         val project = tempDir.mpsProject()
         val daemonHome = tempDir.resolve("daemon-home")
+        val mpsHome = tempDir.mpsHome()
+        val otherMpsHome = tempDir.mpsHome("other")
+
         val fakeDaemon = startOneShotDaemon(
-            """{"type":"ping","status":"ok","protocolVersion":1,"projectPath":"${project.pathString}","mpsHome":"/other/mps","environmentReady":true,"logPath":"/logs/daemon.log"}""",
+            """{"type":"ping","status":"ok","protocolVersion":1,"projectPath":"${project.pathString}","mpsHome":"${otherMpsHome.pathString}","environmentReady":true,"logPath":"/logs/daemon.log"}""",
         )
         DaemonRecordStore(daemonEnvironment(daemonHome)).write(
             daemonRecord(
                 port = fakeDaemon.port,
                 project = project,
-                mpsHome = "/other/mps",
+                mpsHome = otherMpsHome,
                 logPath = "/logs/daemon.log",
             ),
         )
@@ -90,24 +95,25 @@ class ProcessDaemonLauncherTest {
         val exception = assertFailsWith<IllegalStateException> {
             ProcessDaemonLauncher(
                 environment = daemonEnvironment(daemonHome),
-            ).ping(project, Path.of("/opt/mps"), Path.of(System.getProperty("java.home")))
+            ).ping(project, mpsHome, Path.of(System.getProperty("java.home")))
         }
 
         fakeDaemon.join()
-        assertContains(exception.message ?: "", "different MPS home")
-        assertContains(exception.message ?: "", "/other/mps")
+        assertContains(exception.message!!, "different MPS home")
+        assertContains(exception.message!!, otherMpsHome.pathString)
     }
 
     @Test
     fun `daemon ping removes stale daemon record before rejecting a different mps home`() {
         val project = tempDir.mpsProject()
         val daemonHome = tempDir.resolve("daemon-home")
+        val mpsHome = tempDir.mpsHome()
         val store = DaemonRecordStore(daemonEnvironment(daemonHome))
         store.write(
             daemonRecord(
                 port = 9,
                 project = project,
-                mpsHome = "/stale/mps",
+                mpsHome = Path.of("/stale/mps"),
                 logPath = "/logs/daemon.log",
             ),
         )
@@ -115,7 +121,7 @@ class ProcessDaemonLauncherTest {
         assertFailsWith<IllegalStateException> {
             ProcessDaemonLauncher(
                 environment = daemonEnvironment(daemonHome),
-            ).ping(project, Path.of("/new/mps"), Path.of(System.getProperty("java.home")))
+            ).ping(project, mpsHome, Path.of(System.getProperty("java.home")))
         }
 
         assertNull(store.read(project))
