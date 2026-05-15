@@ -14,12 +14,19 @@ import java.util.concurrent.TimeUnit
 import kotlin.io.path.createDirectory
 import kotlin.io.path.createDirectories
 import kotlin.io.path.pathString
+import kotlin.io.path.writeText
 import kotlin.test.assertTrue
 
 internal fun Path.mpsProject(name: String = "project"): Path {
     val project = resolve(name).createDirectories()
     project.resolve(".mps").createDirectory()
     return project
+}
+
+internal fun Path.mpsHome(name: String = "mps", buildNumber: String = "MPS-213.7172.1079"): Path {
+    val mpsHome = resolve(name).createDirectories()
+    mpsHome.resolve("build.properties").writeText("mps.build.number=$buildNumber\n")
+    return mpsHome
 }
 
 internal fun daemonRecord(

@@ -1,8 +1,10 @@
 plugins {
-    id("mops.kotlin-application-conventions")
+    id("mops.kotlin-jvm-conventions")
+    application
 }
 
 dependencies {
+    implementation(project(":launcher"))
     implementation(project(":protocol"))
     implementation("info.picocli:picocli:4.7.7")
 }

@@ -65,7 +65,7 @@ class ProcessDaemonLauncherTest {
         assertFailsWith<IllegalStateException> {
             ProcessDaemonLauncher(
                 environment = daemonEnvironment(daemonHome),
-            ).ping(project, Path.of("/opt/mps"), null)
+            ).ping(project, Path.of("/opt/mps"), Path.of(System.getProperty("java.home")))
         }
 
         assertNull(store.read(project))
@@ -90,7 +90,7 @@ class ProcessDaemonLauncherTest {
         val exception = assertFailsWith<IllegalStateException> {
             ProcessDaemonLauncher(
                 environment = daemonEnvironment(daemonHome),
-            ).ping(project, Path.of("/opt/mps"), null)
+            ).ping(project, Path.of("/opt/mps"), Path.of(System.getProperty("java.home")))
         }
 
         fakeDaemon.join()
@@ -115,7 +115,7 @@ class ProcessDaemonLauncherTest {
         assertFailsWith<IllegalStateException> {
             ProcessDaemonLauncher(
                 environment = daemonEnvironment(daemonHome),
-            ).ping(project, Path.of("/new/mps"), null)
+            ).ping(project, Path.of("/new/mps"), Path.of(System.getProperty("java.home")))
         }
 
         assertNull(store.read(project))
@@ -124,14 +124,14 @@ class ProcessDaemonLauncherTest {
     @Test
     fun `daemon ping kills newly started daemon when ready handshake is incompatible`() {
         val project = tempDir.mpsProject()
-        val mpsHome = tempDir.resolve("mps").createDirectories()
+        val mpsHome = tempDir.mpsHome()
         val daemonHome = tempDir.resolve("daemon-home")
         val classpath = System.getProperty("java.class.path")
 
         val exception = assertFailsWith<IllegalStateException> {
             ProcessDaemonLauncher(
                 environment = daemonEnvironment(daemonHome, "MOPS_DAEMON_CLASSPATH" to classpath),
-            ).ping(project, mpsHome, null)
+            ).ping(project, mpsHome, Path.of(System.getProperty("java.home")))
         }
 
         assertContains(exception.message ?: "", "compatible ready message")
@@ -141,39 +141,9 @@ class ProcessDaemonLauncherTest {
     }
 
     @Test
-    fun `daemon ping starts daemon with bundled MPS jbr when java home is not explicit`() {
-        val project = tempDir.mpsProject()
-        val mpsHome = tempDir.resolve("mps").createDirectories()
-        val daemonHome = tempDir.resolve("daemon-home")
-        val selectedJava = daemonHome.resolve("selected-java.txt")
-        val bundledJava = mpsHome.resolve("jbr/bin/java")
-        bundledJava.parent.createDirectories()
-        Files.writeString(
-            bundledJava,
-            """
-            #!/bin/sh
-            echo "$0" > "${selectedJava.pathString}"
-            exec "${currentJavaExecutable().pathString}" "$@"
-            """.trimIndent(),
-        )
-        bundledJava.toFile().setExecutable(true)
-
-        assertFailsWith<IllegalStateException> {
-            ProcessDaemonLauncher(
-                environment = daemonEnvironment(
-                    daemonHome,
-                    "MOPS_DAEMON_CLASSPATH" to System.getProperty("java.class.path"),
-                ),
-            ).ping(project, mpsHome, null)
-        }
-
-        assertEquals(bundledJava.pathString, selectedJava.readText().trim())
-    }
-
-    @Test
     fun `daemon ping reports startup error emitted before ready`() {
         val project = tempDir.mpsProject()
-        val mpsHome = tempDir.resolve("mps").createDirectories()
+        val mpsHome = tempDir.mpsHome()
         val daemonHome = tempDir.resolve("daemon-home")
 
         val exception = assertFailsWith<IllegalStateException> {
@@ -183,7 +153,7 @@ class ProcessDaemonLauncherTest {
                     "MOPS_DAEMON_CLASSPATH" to System.getProperty("java.class.path"),
                     "MOPS_FAKE_DAEMON_STARTUP_ERROR" to "1",
                 ),
-            ).ping(project, mpsHome, null)
+            ).ping(project, mpsHome, Path.of(System.getProperty("java.home")))
         }
 
         assertContains(exception.message ?: "", "JVM_VERSION_MISMATCH")
@@ -202,9 +172,4 @@ class ProcessDaemonLauncherTest {
         ProcessHandle.of(pid).ifPresent { it.destroyForcibly() }
         throw AssertionError("daemon process $pid was still alive after failed startup")
     }
-
-    private fun currentJavaExecutable(): Path =
-        Path.of(System.getProperty("java.home"))
-            .resolve("bin")
-            .resolve(if (System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java")
 }

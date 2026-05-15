@@ -1,5 +1,6 @@
 plugins {
-    id("mops.kotlin-library-conventions")
+    id("mops.kotlin-jvm-conventions")
+    `java-library`
 }
 
 dependencies {

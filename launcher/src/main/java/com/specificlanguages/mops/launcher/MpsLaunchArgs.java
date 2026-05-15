@@ -1,38 +1,43 @@
-package com.specificlanguages.mops.cli
+package com.specificlanguages.mops.launcher;
 
-import com.specificlanguages.mops.protocol.MpsBuildProperties
-import java.nio.file.Files
-import java.nio.file.Path
-import kotlin.io.path.pathString
+import org.jspecify.annotations.Nullable;
 
-object MpsJvmArgs {
-    fun forMpsHome(mpsHome: Path, ideaConfigDir: Path, ideaSystemDir: Path): List<String> {
-        val mpsVersion = MpsBuildProperties.version(mpsHome)
-        return buildList {
-            add("-Didea.max.intellisense.filesize=100000")
-            add("-Didea.config.path=${ideaConfigDir.pathString}")
-            add("-Didea.system.path=${ideaSystemDir.pathString}")
-            if (mpsVersion != null && mpsVersion >= MpsBuildProperties.Version(2025, 2)) {
-                add("-Didea.platform.prefix=MPS")
-            }
-            if (mpsVersion != null && mpsVersion >= MpsBuildProperties.Version(2023, 3)) {
-                add("-Dintellij.platform.load.app.info.from.resources=true")
-            }
-            if (mpsVersion != null && mpsVersion >= MpsBuildProperties.Version(2022, 3)) {
-                add("-Djna.boot.library.path=${jnaPath(mpsHome).pathString}")
-            }
-            addAll(mpsAddOpens())
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Stream;
+
+public final class MpsLaunchArgs {
+
+    private MpsLaunchArgs() {
+    }
+
+    /**
+     * @param mpsHome MPS or RCP home. Must exist when this method is being called.
+     * @return a list of the JVM arguments required to launch the MPS distribution in MPS home
+     */
+    public static List<String> getJvmArgsFor(Path mpsHome) {
+        MpsVersion mpsVersion = MpsDistributionLayout.readVersion(mpsHome);
+        Path jnaLibraryPath = MpsDistributionLayout.findJnaLibrary(mpsHome);
+
+        List<String> result = new ArrayList<>(MPS_ADD_OPENS);
+
+        result.add("-Didea.max.intellisense.filesize=100000");
+
+        if (mpsVersion.isAtLeast(2025, 2)) {
+            result.add("-Didea.platform.prefix=MPS");
         }
+        if (mpsVersion.isAtLeast(2023, 3)) {
+            result.add("-Dintellij.platform.load.app.info.from.resources=true");
+        }
+        if (mpsVersion.isAtLeast(2022, 3)) {
+            result.add("-Djna.boot.library.path=" + jnaLibraryPath);
+        }
+
+        return result;
     }
 
-    private fun jnaPath(mpsHome: Path): Path {
-        val base = mpsHome.resolve("lib/jna")
-        val platformSpecific = base.resolve(System.getProperty("os.arch"))
-        return if (Files.exists(base) && !Files.exists(platformSpecific)) base else platformSpecific
-    }
-
-    private fun mpsAddOpens(): List<String> =
-        listOf(
+    private static final List<String> MPS_ADD_OPENS = Stream.of(
             "java.base/java.io",
             "java.base/java.lang",
             "java.base/java.lang.reflect",
@@ -73,6 +78,6 @@ object MpsJvmArgs {
             "java.desktop/com.apple.laf",
             "java.desktop/com.apple.eawt",
             "java.desktop/com.apple.eawt.event",
-            "java.management/sun.management",
-        ).map { "--add-opens=$it=ALL-UNNAMED" }
+            "java.management/sun.management"
+    ).map(module -> "--add-opens=" + module + "=ALL-UNNAMED").toList();
 }

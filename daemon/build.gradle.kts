@@ -1,5 +1,6 @@
 plugins {
-    id("mops.kotlin-application-conventions")
+    id("mops.kotlin-jvm-conventions")
+    application
 }
 
 val mpsZip: Configuration by configurations.creating

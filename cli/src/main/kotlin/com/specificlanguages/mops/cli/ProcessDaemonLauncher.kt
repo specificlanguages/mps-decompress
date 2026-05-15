@@ -54,7 +54,7 @@ class ProcessDaemonLauncher(
 
         val token = UUID.randomUUID().toString()
         val daemonClasspath = DaemonClasspath(environment)
-        val launch = DaemonLaunch.prepare(normalizedProject, normalizedMpsHome, environment)
+        val launch = DaemonLaunch.prepare(normalizedProject, normalizedMpsHome, javaHome, environment)
         val runtimeClasspath = listOf(
             daemonClasspath.daemonClasspath(),
             daemonClasspath.mpsRuntimeClasspath(normalizedMpsHome),
@@ -62,7 +62,7 @@ class ProcessDaemonLauncher(
             .filter { it.isNotBlank() }
             .joinToString(java.io.File.pathSeparator)
         val processBuilder = ProcessBuilder(
-            listOf(DaemonJavaHome.executable(javaHome, normalizedMpsHome).pathString) +
+            listOf(javaExecutableFromJavaHome(launch.javaHome).pathString) +
                 launch.jvmArgs +
                 listOf(
                     "-cp",
@@ -117,4 +117,11 @@ class ProcessDaemonLauncher(
         val ping: PingResponse,
     )
 
+    private fun javaExecutableFromJavaHome(javaHome: Path): Path =
+        javaHome.resolve(
+            Path.of(
+                "bin",
+                if (System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java"
+            )
+        )
 }

@@ -1,5 +1,7 @@
 package com.specificlanguages.mops.cli
 
+import com.specificlanguages.mops.launcher.MpsDistributionLayout
+import com.specificlanguages.mops.launcher.MpsLaunchArgs
 import com.specificlanguages.mops.protocol.DaemonRecordStore
 import java.nio.file.Path
 import kotlin.io.path.absolute
@@ -13,10 +15,11 @@ data class DaemonLaunch(
     val ideaConfigDir: Path,
     val ideaSystemDir: Path,
     val logPath: Path,
+    val javaHome: Path,
     val jvmArgs: List<String>,
 ) {
     companion object {
-        fun prepare(projectPath: Path, mpsHome: Path, environment: Map<String, String>): DaemonLaunch {
+        fun prepare(projectPath: Path, mpsHome: Path, javaHome: Path?, environment: Map<String, String>): DaemonLaunch {
             val normalizedProject = projectPath.absolute().normalize()
             val normalizedMpsHome = mpsHome.absolute().normalize()
             val projectState = DaemonRecordStore(environment).projectStateDir(normalizedProject)
@@ -29,6 +32,12 @@ data class DaemonLaunch(
             ideaSystemDir.createDirectories()
             val logPath = logDir.resolve("daemon.log")
 
+            val launchJvmArgs = MpsLaunchArgs.getJvmArgsFor(mpsHome)
+            launchJvmArgs += listOf("-Didea.config.path=$ideaConfigDir", "-Didea.system.path=$ideaSystemDir")
+
+            val effectiveJavaHome = javaHome ?: MpsDistributionLayout.findBundledJavaHome(mpsHome) ?:
+                throw IllegalStateException("MPS distribution at $mpsHome does not bundle Java, specify Java home explicitly")
+
             return DaemonLaunch(
                 projectPath = normalizedProject,
                 mpsHome = normalizedMpsHome,
@@ -37,7 +46,8 @@ data class DaemonLaunch(
                 ideaConfigDir = ideaConfigDir,
                 ideaSystemDir = ideaSystemDir,
                 logPath = logPath,
-                jvmArgs = MpsJvmArgs.forMpsHome(normalizedMpsHome, ideaConfigDir, ideaSystemDir),
+                javaHome = effectiveJavaHome,
+                jvmArgs = launchJvmArgs,
             )
         }
     }
